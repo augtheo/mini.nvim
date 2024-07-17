@@ -81,8 +81,8 @@
 
 --- Example configurations
 ---
---- Configuration similar to 'mhinz/vim-startify':
---- >
+--- Configuration similar to 'mhinz/vim-startify': >lua
+---
 ---   local starter = require('mini.starter')
 ---   starter.setup({
 ---     evaluate_single = true,
@@ -100,8 +100,8 @@
 ---     },
 ---   })
 --- <
---- Configuration similar to 'glepnir/dashboard-nvim':
---- >
+--- Configuration similar to 'glepnir/dashboard-nvim': >lua
+---
 ---   local starter = require('mini.starter')
 ---   starter.setup({
 ---     items = {
@@ -114,8 +114,8 @@
 ---   })
 --- <
 --- Elaborated configuration showing capabilities of custom items,
---- header/footer, and content hooks:
---- >
+--- header/footer, and content hooks: >lua
+---
 ---   local my_items = {
 ---     { name = 'Echo random number', action = 'lua print(math.random())', section = 'Section 1' },
 ---     function()
@@ -138,7 +138,7 @@
 ---     local timer = vim.loop.new_timer()
 ---     local n_seconds = 0
 ---     timer:start(0, 1000, vim.schedule_wrap(function()
----       if vim.bo.filetype ~= 'starter' then
+---       if vim.bo.filetype ~= 'ministarter' then
 ---         timer:stop()
 ---         return
 ---       end
@@ -198,7 +198,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniStarter.config|.
 ---
----@usage `require('mini.starter').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.starter').setup() -- use default config
+---   -- OR
+---   require('mini.starter').setup({}) -- replace {} with your config table
+--- <
 MiniStarter.setup = function(config)
   -- Export module
   _G.MiniStarter = MiniStarter
@@ -221,7 +225,7 @@ end
 --- Default values:
 ---@eval return MiniDoc.afterlines_to_code(MiniDoc.current.eval_section)
 MiniStarter.config = {
-  -- Whether to open starter buffer on VimEnter. Not opened if Neovim was
+  -- Whether to open Starter buffer on VimEnter. Not opened if Neovim was
   -- started with intent to show something else.
   autoopen = true,
 
@@ -246,7 +250,7 @@ MiniStarter.config = {
   footer = nil,
 
   -- Array  of functions to be applied consecutively to initial content.
-  -- Each function should take and return content for 'Starter' buffer (see
+  -- Each function should take and return content for Starter buffer (see
   -- |mini.starter| and |MiniStarter.get_content()| for more details).
   content_hooks = nil,
 
@@ -275,10 +279,12 @@ MiniStarter.config = {
 ---   Starter buffer. Use it with
 ---   `autocmd User MiniStarterOpened <your command>`.
 ---
---- Note: to fully use it in autocommand, it is recommended to utilize
---- |autocmd-nested|. Example:
---- `autocmd TabNewEntered * ++nested lua MiniStarter.open()`
+--- Note: to fully use it in autocommand, use |autocmd-nested|. Example: >lua
 ---
+---   local starter_open = function() MiniStarter.open() end
+---   local au_opts = { nested = true, callback = starter_open }
+---   vim.api.nvim_create_autocmd('TabNewEntered', au_opts)
+--- <
 ---@param buf_id number|nil Identifier of existing valid buffer (see |bufnr()|) to
 ---   open inside. Default: create a new one.
 MiniStarter.open = function(buf_id)
@@ -310,8 +316,10 @@ MiniStarter.open = function(buf_id)
   -- Populate buffer
   MiniStarter.refresh()
 
-  -- Issue custom event
-  vim.cmd('doautocmd User MiniStarterOpened')
+  -- Issue custom event. Delay at startup, as it is executed with `noautocmd`.
+  local trigger_event = function() vim.api.nvim_exec_autocmds('User', { pattern = 'MiniStarterOpened' }) end
+  if H.is_in_vimenter then trigger_event = vim.schedule_wrap(trigger_event) end
+  trigger_event()
 
   -- Ensure not being in VimEnter
   H.is_in_vimenter = false
@@ -702,7 +710,7 @@ end
 ---
 --- Output is a content hook which independently aligns content horizontally
 --- and vertically. Window width and height are taken from first window in current
---- tabpage displaying the starter buffer.
+--- tabpage displaying the Starter buffer.
 ---
 --- Basically, this computes left and top pads for |MiniStarter.gen_hook.padding|
 --- such that output lines would appear aligned in certain way.
@@ -1053,7 +1061,8 @@ H.create_autocommands = function(config)
 
       -- Set indicator used to make different decision on startup
       H.is_in_vimenter = true
-      MiniStarter.open()
+      -- Use 'noautocmd' for better startup time
+      vim.cmd('noautocmd lua MiniStarter.open()')
     end
 
     vim.api.nvim_create_autocmd(
@@ -1307,7 +1316,7 @@ H.make_query = function(buf_id, query, echo_msg)
   end
 end
 
--- Work with starter buffer ---------------------------------------------------
+-- Work with Starter buffer ---------------------------------------------------
 H.make_buffer_autocmd = function(buf_id)
   local augroup = vim.api.nvim_create_augroup('MiniStarterBuffer', {})
 
@@ -1334,13 +1343,19 @@ H.apply_buffer_options = function(buf_id)
   --   mapping is present (maybe due to non-blocking nature of `nvim_input()`).
   vim.api.nvim_feedkeys('\28\14', 'nx', false)
 
-  -- Set buffer name
+  -- Set unique buffer name. Prefer "Starter" prefix as more user friendly.
   H.buffer_number = H.buffer_number + 1
   local name = H.buffer_number <= 1 and 'Starter' or ('Starter_' .. H.buffer_number)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ':t') == name then
+      name = 'ministarter://' .. H.buffer_number
+      break
+    end
+  end
   vim.api.nvim_buf_set_name(buf_id, name)
 
   -- Having `noautocmd` is crucial for performance: ~9ms without it, ~1.6ms with it
-  vim.cmd('noautocmd silent! set filetype=starter')
+  vim.cmd('noautocmd silent! set filetype=ministarter')
 
   local options = {
     -- Taken from 'vim-startify'
@@ -1439,13 +1454,8 @@ end
 H.is_something_shown = function()
   -- Don't open Starter buffer if Neovim is opened to show something. That is
   -- when at least one of the following is true:
-  -- - Current buffer has any lines (something opened explicitly).
-  -- NOTE: Usage of `line2byte(line('$') + 1) < 0` seemed to be fine, but it
-  -- doesn't work if some automated changed was made to buffer while leaving it
-  -- empty (returns 2 instead of -1). This was also the reason of not being
-  -- able to test with child Neovim process from 'tests/helpers'.
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
-  if #lines > 1 or (#lines == 1 and lines[1]:len() > 0) then return true end
+  -- - There are files in arguments (like `nvim foo.txt` with new file).
+  if vim.fn.argc() > 0 then return true end
 
   -- - Several buffers are listed (like session with placeholder buffers). That
   --   means unlisted buffers (like from `nvim-tree`) don't affect decision.
@@ -1455,8 +1465,18 @@ H.is_something_shown = function()
   )
   if #listed_buffers > 1 then return true end
 
-  -- - There are files in arguments (like `nvim foo.txt` with new file).
-  if vim.fn.argc() > 0 then return true end
+  -- - Current buffer is meant to show something else
+  if vim.bo.filetype ~= '' then return true end
+
+  -- - Current buffer has any lines (something opened explicitly).
+  -- NOTE: Usage of `line2byte(line('$') + 1) < 0` seemed to be fine, but it
+  -- doesn't work if some automated changed was made to buffer while leaving it
+  -- empty (returns 2 instead of -1). This was also the reason of not being
+  -- able to test with child Neovim process from 'tests/helpers'.
+  local n_lines = vim.api.nvim_buf_line_count(0)
+  if n_lines > 1 then return true end
+  local first_line = vim.api.nvim_buf_get_lines(0, 0, 1, true)[1]
+  if string.len(first_line) > 0 then return true end
 
   return false
 end
@@ -1515,7 +1535,8 @@ end
 -- Use `priority` because of the regression bug (highlights are not stacked
 -- properly): https://github.com/neovim/neovim/issues/17358
 H.buf_hl = function(buf_id, ns_id, hl_group, line, col_start, col_end, priority)
-  vim.highlight.range(buf_id, ns_id, hl_group, { line, col_start }, { line, col_end }, { priority = priority })
+  local opts = { end_row = line, end_col = col_end, hl_group = hl_group, priority = priority }
+  vim.api.nvim_buf_set_extmark(buf_id, ns_id, line, col_start, opts)
 end
 
 H.get_buffer_windows = function(buf_id)

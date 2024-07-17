@@ -35,25 +35,19 @@ local get_two_windows = function()
 end
 
 -- Mocks
-local mock_devicons = function() child.cmd('set rtp+=tests/dir-statusline') end
+local mock_miniicons = function() child.lua('require("mini.icons").setup()') end
 
-local mock_gitsigns = function(head, status)
-  local cmd_head = ([[lua vim.b.gitsigns_head = '%s']]):format(head or 'main')
-  local cmd_status = ([[lua vim.b.gitsigns_status = '%s']]):format(status or '+1 ~2 -3')
-
-  -- Mock for current buffer
-  child.cmd(cmd_head)
-  child.cmd(cmd_status)
-
-  -- Mock for future buffers
-  child.cmd('augroup MockGitsigns')
-  child.cmd('au!')
-  child.cmd(('au BufEnter * %s'):format(cmd_head))
-  child.cmd(('au BufEnter * %s'):format(cmd_status))
-  child.cmd('augroup END')
+local mock_gitsigns = function()
+  child.b.gitsigns_head, child.b.gitsigns_status = 'main', '+1 ~2 -3'
 end
 
+local mock_minigit = function() child.b.minigit_summary_string = 'main|bisect (MM)' end
+
+local mock_minidiff = function() child.b.minidiff_summary_string = '#4 +3 ~2 -1' end
+
 local mock_diagnostics = function() child.cmd('luafile tests/dir-statusline/mock-diagnostics.lua') end
+
+local mock_lsp = function() child.cmd('luafile tests/dir-statusline/mock-lsp.lua') end
 
 local mocked_filepath = vim.fn.fnamemodify('tests/dir-statusline/mocked.lua', ':p')
 local mock_file = function(bytes)
@@ -105,6 +99,9 @@ T['setup()']['creates side effects'] = function()
   has_highlight('MiniStatuslineFilename', 'links to StatusLineNC')
   has_highlight('MiniStatuslineFileinfo', 'links to StatusLine')
   has_highlight('MiniStatuslineInactive', 'links to StatusLineNC')
+
+  -- Sets global value of 'statusline'
+  eq(child.go.statusline, '%{%v:lua.MiniStatusline.active()%}')
 end
 
 T['setup()']['creates `config` field'] = function()
@@ -140,7 +137,7 @@ end
 
 T['setup()']['sets proper autocommands'] = function()
   local validate = function(win_id, field)
-    eq(child.api.nvim_win_get_option(win_id, 'statusline'), '%!v:lua.MiniStatusline.' .. field .. '()')
+    eq(child.api.nvim_win_get_option(win_id, 'statusline'), '%{%v:lua.MiniStatusline.' .. field .. '()%}')
   end
 
   local wins = get_two_windows()
@@ -161,6 +158,59 @@ end
 T['setup()']['disables built-in statusline in quickfix window'] = function()
   child.cmd('copen')
   expect.match(child.o.statusline, 'MiniStatusline')
+end
+
+T['setup()']['ensures content when working with built-in terminal'] = function()
+  local init_buf_id = child.api.nvim_get_current_buf()
+
+  child.cmd('terminal! bash --noprofile --norc')
+  -- Wait for terminal to get active
+  child.loop.sleep(50)
+  expect.match(child.wo.statusline, 'MiniStatusline%.active')
+  eq(child.api.nvim_get_current_buf() == init_buf_id, false)
+
+  type_keys('i', 'exit', '<CR>')
+  child.loop.sleep(50)
+  type_keys('<CR>')
+  expect.match(child.wo.statusline, 'MiniStatusline%.active')
+  eq(child.api.nvim_get_current_buf() == init_buf_id, true)
+end
+
+T['setup()']['ensures content when buffer is displayed in non-current window'] = function()
+  local init_win_id = child.api.nvim_get_current_win()
+  local validate = function()
+    expect.match(child.api.nvim_win_get_option(init_win_id, 'statusline'), 'MiniStatusline%.active')
+  end
+  local buf_id = child.api.nvim_create_buf(false, true)
+
+  -- Normal window
+  child.cmd('leftabove vertical split')
+  local new_win_id = child.api.nvim_get_current_win()
+  child.api.nvim_set_current_win(init_win_id)
+  child.api.nvim_win_set_buf(new_win_id, buf_id)
+  validate()
+
+  -- Floating window
+  child.api.nvim_open_win(buf_id, false, { relative = 'editor', row = 1, col = 1, height = 4, width = 10 })
+  validate()
+end
+
+T['setup()']['handles `laststatus=3`'] = function()
+  local validate_active = function(win_id)
+    expect.match(child.api.nvim_win_get_option(win_id, 'statusline'), 'MiniStatusline%.active')
+  end
+
+  -- Should set same 'statusline' value for global statusline to reduce flicker
+  child.o.laststatus = 3
+  local init_win_id = child.api.nvim_get_current_win()
+  child.cmd('leftabove vertical split')
+  local new_win_id = child.api.nvim_get_current_win()
+  validate_active(init_win_id)
+  validate_active(new_win_id)
+
+  child.cmd('wincmd w')
+  validate_active(init_win_id)
+  validate_active(new_win_id)
 end
 
 T['combine_groups()'] = new_set()
@@ -259,13 +309,18 @@ T['section_diagnostics()'] = new_set({ hooks = { pre_case = mock_diagnostics } }
 T['section_diagnostics()']['works'] = function()
   eq(child.lua_get('MiniStatusline.section_diagnostics({})'), ' E4 W3 I2 H1')
 
-  -- Should return predefined string if no diagnostic output
-  child.lua('vim.lsp.diagnostic.get_count = function(...) return 0 end')
-  child.lua('vim.diagnostic.get = function(...) return {} end')
-  eq(child.lua_get('MiniStatusline.section_diagnostics({})'), ' -')
+  -- Should not depend on LSP server attached
+  mock_lsp()
+  eq(child.lua_get('_G.n_lsp_clients'), 1)
+  eq(child.lua_get('MiniStatusline.section_diagnostics({})'), ' E4 W3 I2 H1')
 
-  -- Should return empty string if no LSP client attached
-  child.lua('vim.lsp.buf_get_clients = function() return {} end')
+  child.lua('_G.detach_lsp()')
+  eq(child.lua_get('_G.n_lsp_clients'), 0)
+  eq(child.lua_get('MiniStatusline.section_diagnostics({})'), ' E4 W3 I2 H1')
+
+  -- Should return empty string if no diagnostic entries defined
+  child.lua('vim.diagnostic.get = function(...) return {} end')
+  child.lua('vim.diagnostic.count = function(...) return {} end')
   eq(child.lua_get('MiniStatusline.section_diagnostics({})'), '')
 end
 
@@ -281,21 +336,91 @@ T['section_diagnostics()']['respects `args.icon`'] = function()
   eq(child.lua_get([[MiniStatusline.section_diagnostics({icon = 'AAA'})]]), 'AAA E4 W3 I2 H1')
 end
 
+T['section_diagnostics()']['respects `args.signs`'] = function()
+  local out = child.lua_get(
+    [[MiniStatusline.section_diagnostics({ signs = { ERROR = '!', WARN = '?', INFO = '@', HINT = '*' } })]]
+  )
+  eq(out, ' !4 ?3 @2 *1')
+end
+
 T['section_diagnostics()']['respects `config.use_icons`'] = function()
   child.lua('MiniStatusline.config.use_icons = false')
-  eq(child.lua_get([[MiniStatusline.section_diagnostics({})]]), 'LSP E4 W3 I2 H1')
+  eq(child.lua_get([[MiniStatusline.section_diagnostics({})]]), 'Diag E4 W3 I2 H1')
 
   -- Should also use buffer local config
   child.b.ministatusline_config = { use_icons = true }
   eq(child.lua_get([[MiniStatusline.section_diagnostics({})]]), ' E4 W3 I2 H1')
 end
 
-T['section_diagnostics()']['is shown only in normal buffers'] = function()
+T['section_diagnostics()']['works in not normal buffers'] = function()
+  -- Should return empty string if there is no diagnostic defined
   child.cmd('help')
+  eq(child.lua_get('MiniStatusline.section_diagnostics({})'), ' E4 W3 I2 H1')
+
+  child.lua('vim.diagnostic.get = function(...) return {} end')
+  child.lua('vim.diagnostic.count = function(...) return {} end')
   eq(child.lua_get('MiniStatusline.section_diagnostics({})'), '')
 end
 
-T['section_fileinfo()'] = new_set({ hooks = { pre_case = mock_devicons, post_case = unmock_file } })
+T['section_diagnostics()']['is not shown if diagnostics is disabled'] = function()
+  if child.fn.has('nvim-0.9') == 0 then
+    MiniTest.skip('Requires `vim.diagnostic.is_disabled` / `vim.diagnostic.is_enabled` which are Neovim>=0.9.')
+  end
+
+  local buf_id = child.api.nvim_get_current_buf()
+  if child.fn.has('nvim-0.10') == 1 then
+    child.diagnostic.enable(false, { bufnr = buf_id })
+  else
+    child.diagnostic.disable(buf_id)
+  end
+  eq(child.lua_get('MiniStatusline.section_diagnostics({})'), '')
+end
+
+T['section_lsp()'] = new_set({ hooks = { pre_case = mock_lsp } })
+
+T['section_lsp()']['works'] = function()
+  eq(child.lua_get('MiniStatusline.section_lsp({})'), '󰰎 +')
+
+  -- Should show number of attached LSP servers
+  child.lua('_G.attach_lsp()')
+  eq(child.lua_get('MiniStatusline.section_lsp({})'), '󰰎 ++')
+
+  -- Should show empty string if no attached LSP servers
+  child.lua('_G.detach_lsp()')
+  child.lua('_G.detach_lsp()')
+  eq(child.lua_get('MiniStatusline.section_lsp({})'), '')
+
+  -- Should work if attached buffer clients is returned not as array
+  child.lua([[
+    local f = function() return { [2] = { id = 2 }, [4] = { id = 4 } } end
+    vim.lsp.buf_get_clients, vim.lsp.get_clients = f, f
+    vim.api.nvim_exec_autocmds('LspAttach', {})
+  ]])
+  eq(child.lua_get('MiniStatusline.section_lsp({})'), '󰰎 ++')
+end
+
+T['section_lsp()']['respects `args.trunc_width`'] = function()
+  set_width(100)
+  eq(child.lua_get('MiniStatusline.section_lsp({ trunc_width = 100 })'), '󰰎 +')
+  set_width(99)
+  eq(child.lua_get('MiniStatusline.section_lsp({ trunc_width = 100 })'), '')
+end
+
+T['section_lsp()']['respects `args.icon`'] = function()
+  eq(child.lua_get([[MiniStatusline.section_lsp({icon = 'A'})]]), 'A +')
+  eq(child.lua_get([[MiniStatusline.section_lsp({icon = 'AAA'})]]), 'AAA +')
+end
+
+T['section_lsp()']['respects `config.use_icons`'] = function()
+  child.lua('MiniStatusline.config.use_icons = false')
+  eq(child.lua_get([[MiniStatusline.section_lsp({})]]), 'LSP +')
+
+  -- Should also use buffer local config
+  child.b.ministatusline_config = { use_icons = true }
+  eq(child.lua_get([[MiniStatusline.section_lsp({})]]), '󰰎 +')
+end
+
+T['section_fileinfo()'] = new_set({ hooks = { pre_case = mock_miniicons, post_case = unmock_file } })
 
 local validate_fileinfo = function(args, pattern)
   local command = ('MiniStatusline.section_fileinfo({ %s })'):format(args)
@@ -307,7 +432,7 @@ T['section_fileinfo()']['works'] = function()
   child.cmd('edit ' .. mocked_filepath)
   local encoding = child.bo.fileencoding or child.bo.encoding
   local format = child.bo.fileformat
-  local pattern = '^ lua ' .. vim.pesc(encoding) .. '%[' .. vim.pesc(format) .. '%] 10B$'
+  local pattern = '^󰢱 lua ' .. vim.pesc(encoding) .. '%[' .. vim.pesc(format) .. '%] 10B$'
   validate_fileinfo('', pattern)
 end
 
@@ -316,9 +441,9 @@ T['section_fileinfo()']['respects `args.trunc_width`'] = function()
   child.cmd('edit ' .. mocked_filepath)
 
   set_width(100)
-  validate_fileinfo('trunc_width = 100', '^ lua...')
+  validate_fileinfo('trunc_width = 100', '^󰢱 lua...')
   set_width(99)
-  validate_fileinfo('trunc_width = 100', '^ lua$')
+  validate_fileinfo('trunc_width = 100', '^󰢱 lua$')
 end
 
 T['section_fileinfo()']['respects `config.use_icons`'] = function()
@@ -330,12 +455,16 @@ T['section_fileinfo()']['respects `config.use_icons`'] = function()
 
   -- Should also use buffer local config
   child.b.ministatusline_config = { use_icons = true }
-  validate_fileinfo('', ' lua...')
+  validate_fileinfo('', '󰢱 lua...')
 end
 
-T['section_fileinfo()']["correctly asks 'nvim-web-devicons' for icon"] = function()
+T['section_fileinfo()']["can fall back to 'nvim-web-devicons'"] = function()
+  child.lua('_G.MiniIcons = nil')
+  -- Mock 'nvim-web-devicons'
+  child.cmd('set rtp+=tests/dir-statusline')
+
   child.cmd('e tmp.txt')
-  eq(child.lua_get('_G.devicons_args'), { filename = 'tmp.txt', extension = 'txt', options = { default = true } })
+  validate_fileinfo('', ' text...')
 end
 
 T['section_fileinfo()']['uses correct filetype'] = function()
@@ -355,12 +484,13 @@ T['section_fileinfo()']['uses human friendly size'] = function()
   unmock_file()
 end
 
-T['section_fileinfo()']['is shown only in normal buffers with filetypes'] = function()
+T['section_fileinfo()']['is shown only in buffers with filetypes'] = function()
   child.bo.filetype = ''
   validate_fileinfo('', '^$')
 
+  -- Should still show even if buffer is not normal
   child.cmd('help')
-  validate_fileinfo('', '^$')
+  validate_fileinfo('', '^󰋖 help$')
 end
 
 T['section_filename()'] = new_set()
@@ -385,51 +515,104 @@ T['section_filename()']['respects `args.trunc_width`'] = function()
   eq(child.lua_get('MiniStatusline.section_filename({ trunc_width = 100 })'), '%f%m%r')
 end
 
-T['section_git()'] = new_set({ hooks = { pre_case = mock_gitsigns } })
+T['section_git()'] = new_set({ hooks = { pre_case = mock_minigit } })
 
 T['section_git()']['works'] = function()
-  eq(child.lua_get('MiniStatusline.section_git({})'), ' main +1 ~2 -3')
+  eq(child.lua_get('MiniStatusline.section_git({})'), ' main|bisect (MM)')
 
-  -- Should show signs even if there is no branch
-  child.b.gitsigns_head = nil
-  eq(child.lua_get('MiniStatusline.section_git({})'), ' - +1 ~2 -3')
+  -- Should return non-empty string even if there is no branch
+  child.b.minigit_summary_string = ''
+  eq(child.lua_get('MiniStatusline.section_git({})'), ' -')
 
-  -- Should not have trailing whitespace if git status is empty
-  child.b.gitsigns_head, child.b.gitsigns_status = 'main', ''
+  -- Should return empty string if no Git data is found
+  child.b.minigit_summary_string = nil
+  eq(child.lua_get('MiniStatusline.section_git({})'), '')
+end
+
+T['section_git()']["falls back to 'gitsigns.nvim'"] = function()
+  child.b.minigit_summary_string = nil
+  mock_gitsigns()
+
   eq(child.lua_get('MiniStatusline.section_git({})'), ' main')
 
-  -- Should return empty string if no Git is found
-  child.b.gitsigns_head, child.b.gitsigns_status = nil, nil
-  eq(child.lua_get('MiniStatusline.section_git({})'), '')
+  -- Should return non-empty string even if there is no branch
+  child.b.gitsigns_head = ''
+  eq(child.lua_get('MiniStatusline.section_git({})'), ' -')
 
-  child.b.gitsigns_head, child.b.gitsigns_status = '', ''
+  -- Should return empty string if no Git data is found
+  child.b.gitsigns_head = nil
   eq(child.lua_get('MiniStatusline.section_git({})'), '')
 end
 
 T['section_git()']['respects `args.trunc_width`'] = function()
   set_width(100)
-  eq(child.lua_get('MiniStatusline.section_git({ trunc_width = 100 })'), ' main +1 ~2 -3')
+  eq(child.lua_get('MiniStatusline.section_git({ trunc_width = 100 })'), ' main|bisect (MM)')
   set_width(99)
-  eq(child.lua_get('MiniStatusline.section_git({ trunc_width = 100 })'), ' main')
+  eq(child.lua_get('MiniStatusline.section_git({ trunc_width = 100 })'), '')
 end
 
 T['section_git()']['respects `args.icon`'] = function()
-  eq(child.lua_get([[MiniStatusline.section_git({icon = 'A'})]]), 'A main +1 ~2 -3')
-  eq(child.lua_get([[MiniStatusline.section_git({icon = 'AAA'})]]), 'AAA main +1 ~2 -3')
+  eq(child.lua_get([[MiniStatusline.section_git({ icon = 'A' })]]), 'A main|bisect (MM)')
+  eq(child.lua_get([[MiniStatusline.section_git({ icon = 'AAA' })]]), 'AAA main|bisect (MM)')
 end
 
 T['section_git()']['respects `config.use_icons`'] = function()
   child.lua('MiniStatusline.config.use_icons = false')
-  eq(child.lua_get([[MiniStatusline.section_git({})]]), 'Git main +1 ~2 -3')
+  eq(child.lua_get([[MiniStatusline.section_git({})]]), 'Git main|bisect (MM)')
 
   -- Should also use buffer local config
   child.b.ministatusline_config = { use_icons = true }
-  eq(child.lua_get([[MiniStatusline.section_git({})]]), ' main +1 ~2 -3')
+  eq(child.lua_get([[MiniStatusline.section_git({})]]), ' main|bisect (MM)')
 end
 
-T['section_git()']['is shown only in normal buffers'] = function()
-  child.cmd('help')
-  eq(child.lua_get('MiniStatusline.section_git({})'), '')
+T['section_diff()'] = new_set({ hooks = { pre_case = mock_minidiff } })
+
+T['section_diff()']['works'] = function()
+  eq(child.lua_get('MiniStatusline.section_diff({})'), ' #4 +3 ~2 -1')
+
+  -- Should return non-empty string even if there is no branch
+  child.b.minidiff_summary_string = ''
+  eq(child.lua_get('MiniStatusline.section_diff({})'), ' -')
+
+  -- Should return empty string if no Git data is found
+  child.b.minidiff_summary_string = nil
+  eq(child.lua_get('MiniStatusline.section_diff({})'), '')
+end
+
+T['section_diff()']["falls back to 'gitsigns.nvim'"] = function()
+  child.b.minidiff_summary_string = nil
+  mock_gitsigns()
+
+  eq(child.lua_get('MiniStatusline.section_diff({})'), ' +1 ~2 -3')
+
+  -- Should return non-empty string even if there is no branch
+  child.b.gitsigns_status = ''
+  eq(child.lua_get('MiniStatusline.section_diff({})'), ' -')
+
+  -- Should return empty string if no Git data is found
+  child.b.gitsigns_status = nil
+  eq(child.lua_get('MiniStatusline.section_diff({})'), '')
+end
+
+T['section_diff()']['respects `args.trunc_width`'] = function()
+  set_width(100)
+  eq(child.lua_get('MiniStatusline.section_diff({ trunc_width = 100 })'), ' #4 +3 ~2 -1')
+  set_width(99)
+  eq(child.lua_get('MiniStatusline.section_diff({ trunc_width = 100 })'), '')
+end
+
+T['section_diff()']['respects `args.icon`'] = function()
+  eq(child.lua_get([[MiniStatusline.section_diff({ icon = 'A' })]]), 'A #4 +3 ~2 -1')
+  eq(child.lua_get([[MiniStatusline.section_diff({ icon = 'AAA' })]]), 'AAA #4 +3 ~2 -1')
+end
+
+T['section_diff()']['respects `config.use_icons`'] = function()
+  child.lua('MiniStatusline.config.use_icons = false')
+  eq(child.lua_get([[MiniStatusline.section_diff({})]]), 'Diff #4 +3 ~2 -1')
+
+  -- Should also use buffer local config
+  child.b.ministatusline_config = { use_icons = true }
+  eq(child.lua_get([[MiniStatusline.section_diff({})]]), ' #4 +3 ~2 -1')
 end
 
 T['section_location()'] = new_set()
@@ -570,26 +753,28 @@ T['Default content'] = new_set()
 T['Default content']['active'] = new_set({
   hooks = {
     pre_case = function()
-      child.set_size(5, 150)
+      child.set_size(5, 160)
 
-      mock_devicons()
-      mock_gitsigns()
-      mock_diagnostics()
+      child.lua('require("mini.icons").setup()')
       mock_file(10)
 
       -- Mock filename section to use relative path for consistent screenshots
       child.lua([[MiniStatusline.section_filename = function() return '%f%m%r' end]])
       child.cmd('edit ' .. vim.fn.fnamemodify(mocked_filepath, ':.'))
+      mock_diagnostics()
+      mock_lsp()
+      mock_minigit()
+      mock_minidiff()
       type_keys('/a', '<CR>')
     end,
     post_case = unmock_file,
   },
   -- There should also be test for 140, but it is for truncating in
   -- `section_filename` from full to relative paths
-  parametrize = { { 120 }, { 75 }, { 74 } },
+  parametrize = { { 120 }, { 75 }, { 40 }, { 39 } },
 }, {
   test = function(window_width)
-    eq(child.api.nvim_win_get_option(0, 'statusline'), '%!v:lua.MiniStatusline.active()')
+    eq(child.api.nvim_win_get_option(0, 'statusline'), '%{%v:lua.MiniStatusline.active()%}')
     set_width(window_width)
     child.expect_screenshot()
   end,
@@ -599,10 +784,22 @@ T['Default content']['inactive'] = function()
   local wins = get_two_windows()
 
   -- Check that option is set correctly
-  eq(child.api.nvim_win_get_option(wins.inactive, 'statusline'), '%!v:lua.MiniStatusline.inactive()')
+  eq(child.api.nvim_win_get_option(wins.inactive, 'statusline'), '%{%v:lua.MiniStatusline.inactive()%}')
 
   -- Validate
   eq(child.lua_get('MiniStatusline.inactive()'), '%#MiniStatuslineInactive#%F%=')
+end
+
+T['Default content']['inactive is evaluated in the context of its window'] = function()
+  child.set_size(10, 30)
+  child.lua([[
+    local f = function() return vim.api.nvim_get_current_win() end
+    MiniStatusline.config.content = { active = f, inactive = f }
+  ]])
+  child.cmd('wincmd =')
+  child.cmd('redraw!')
+  child.expect_screenshot()
+  eq(child.api.nvim_get_current_win(), 1001)
 end
 
 return T

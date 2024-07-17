@@ -76,7 +76,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniExtra.config|.
 ---
----@usage `require('mini.extra').setup({})` (replace `{}` with your `config` table).
+---@usage >lua
+---   require('mini.extra').setup() -- use default config
+---   -- OR
+---   require('mini.extra').setup({}) -- replace {} with your config table
+--- <
 MiniExtra.setup = function(config)
   -- Export module
   _G.MiniExtra = MiniExtra
@@ -100,7 +104,7 @@ MiniExtra.config = {}
 ---
 --- This is a table with function elements. Call to actually get specification.
 ---
---- Assumed to be used as part of |MiniAi.setup()|. Example: >
+--- Assumed to be used as part of |MiniAi.setup()|. Example: >lua
 ---
 ---   local gen_ai_spec = require('mini.extra').gen_ai_spec
 ---   require('mini.ai').setup({
@@ -112,6 +116,7 @@ MiniExtra.config = {}
 ---       N = gen_ai_spec.number(),
 ---     },
 ---   })
+--- <
 MiniExtra.gen_ai_spec = {}
 
 --- Current buffer textobject
@@ -224,7 +229,7 @@ MiniExtra.gen_ai_spec.number = function()
     local from, to = line:find(digits_pattern, init)
     if from == nil then return nil, nil end
 
-    -- Make sure that hese digits were not processed before. This can happen
+    -- Make sure that these digits were not processed before. This can happen
     -- because 'miin.ai' does next with `init = from + 1`, meaning that
     -- "-12.34" was already matched, then it would try to match starting from
     -- "1": we want to avoid matching that right away and avoid matching "34"
@@ -258,7 +263,7 @@ end
 ---
 --- This is a table with function elements. Call to actually get specification.
 ---
---- Assumed to be used as part of |MiniHipatterns.setup()|. Example: >
+--- Assumed to be used as part of |MiniHipatterns.setup()|. Example: >lua
 ---
 ---   local hi_words = require('mini.extra').gen_highlighter.words
 ---   require('mini.hipatterns').setup({
@@ -266,6 +271,7 @@ end
 ---       todo = hi_words({ 'TODO', 'Todo', 'todo' }, 'MiniHipatternsTodo'),
 ---     },
 ---   })
+--- <
 MiniExtra.gen_highlighter = {}
 
 --- Highlight words
@@ -273,7 +279,7 @@ MiniExtra.gen_highlighter = {}
 --- Notes:
 --- - Words should start and end with alphanumeric symbol (latin letter or digit).
 --- - Words will be highlighted only in full and not if part bigger word, i.e.
----   there should not be alphanumeric symbole before and after it.
+---   there should not be alphanumeric symbol before and after it.
 ---
 ---@param words table Array of words to highlight. Will be matched as is, not
 ---   as Lua pattern.
@@ -282,7 +288,7 @@ MiniExtra.gen_highlighter = {}
 ---@param extmark_opts any Proper `extmark_opts` field for `highlighter`.
 ---   See |MiniHipatterns.config|.
 MiniExtra.gen_highlighter.words = function(words, group, extmark_opts)
-  if not vim.tbl_islist(words) then H.error('`words` should be an array.') end
+  if not H.islist(words) then H.error('`words` should be an array.') end
   if not (type(group) == 'string' or vim.is_callable(group)) then H.error('`group` should be string or callable.') end
   local pattern = vim.tbl_map(function(x)
     if type(x) ~= 'string' then H.error('All elements of `words` should be strings.') end
@@ -347,8 +353,8 @@ MiniExtra.pickers.buf_lines = function(local_opts, opts)
       H.buf_ensure_loaded(buf_id)
       local buf_name = H.buf_get_name(buf_id) or ''
       for lnum, l in ipairs(vim.api.nvim_buf_get_lines(buf_id, 0, -1, false)) do
-        local prefix = is_scope_all and string.format('%s:', buf_name) or ''
-        table.insert(items, { text = string.format('%s%s:%s', prefix, lnum, l), bufnr = buf_id, lnum = lnum })
+        local prefix = is_scope_all and string.format('%s\0', buf_name) or ''
+        table.insert(items, { text = string.format('%s%s\0%s', prefix, lnum, l), bufnr = buf_id, lnum = lnum })
       end
     end
     pick.set_picker_items(items)
@@ -617,13 +623,18 @@ MiniExtra.pickers.git_commits = function(local_opts, opts)
   if local_opts.path == nil then path = repo_dir end
 
   -- Define source
-  local show_patch = function(buf_id, item)
+  local preview = function(buf_id, item)
     if type(item) ~= 'string' then return end
+    -- Only define syntax highlighting to avoid costly `FileType` autocommands
     vim.bo[buf_id].syntax = 'git'
     H.cli_show_output(buf_id, { 'git', '-C', repo_dir, '--no-pager', 'show', item:match('^(%S+)') })
   end
-  local preview = show_patch
-  local choose = H.make_show_in_target_win('git_commits', show_patch)
+  local choose_show = function(buf_id, item)
+    preview(buf_id, item)
+    -- Set filetype on opened buffer to trigger appropriate `FileType` event
+    vim.bo[buf_id].filetype = 'git'
+  end
+  local choose = H.make_show_in_target_win('git_commits', choose_show)
 
   local command = { 'git', 'log', [[--format=format:%h %s]], '--', path }
 
@@ -771,7 +782,7 @@ MiniExtra.pickers.hipatterns = function(local_opts, opts)
   if not has_hipatterns then H.error([[`pickers.hipatterns` requires 'mini.hipatterns' which can not be found.]]) end
 
   local_opts = vim.tbl_deep_extend('force', { highlighters = nil, scope = 'all' }, local_opts or {})
-  if local_opts.highlighters ~= nil and not vim.tbl_islist(local_opts.highlighters) then
+  if local_opts.highlighters ~= nil and not H.islist(local_opts.highlighters) then
     H.error('`local_opts.highlighters` should be an array of highlighter identifiers.')
   end
   local highlighters = local_opts.highlighters
@@ -796,7 +807,7 @@ MiniExtra.pickers.hipatterns = function(local_opts, opts)
   for _, item in ipairs(items) do
     --stylua: ignore
     item.text = string.format(
-      '%s │ %s:%d:%d:%s',
+      '%s │ %s│%d│%d│%s',
       H.ensure_text_width(item.highlighter, highlighter_width),
       item.buf_name, item.lnum, item.col, item.line
     )
@@ -958,7 +969,6 @@ MiniExtra.pickers.keymaps = function(local_opts, opts)
   local scope = H.pick_validate_scope(local_opts, { 'all', 'global', 'buf' }, 'keymaps')
 
   -- Create items
-  local keytrans = vim.fn.has('nvim-0.8') == 1 and vim.fn.keytrans or function(x) return x end
   local items = {}
   local populate_modes = mode == 'all' and { 'n', 'x', 's', 'o', 'i', 'l', 'c', 't' } or { mode }
   local max_lhs_width = 0
@@ -966,7 +976,7 @@ MiniExtra.pickers.keymaps = function(local_opts, opts)
     for _, m in ipairs(populate_modes) do
       for _, maparg in ipairs(source(m)) do
         local desc = maparg.desc ~= nil and vim.inspect(maparg.desc) or maparg.rhs
-        local lhs = keytrans(maparg.lhsraw or maparg.lhs)
+        local lhs = vim.fn.keytrans(maparg.lhsraw or maparg.lhs)
         max_lhs_width = math.max(vim.fn.strchars(lhs), max_lhs_width)
         table.insert(items, { lhs = lhs, desc = desc, maparg = maparg })
       end
@@ -1064,7 +1074,6 @@ end
 ---     - "references".
 ---     - "type_definition".
 ---     - "workspace_symbol".
---- - Requires Neovim>=0.8.
 --- - Directly relies on `vim.lsp.buf` methods which support |lsp-on-list-handler|.
 ---   In particular, it means that picker is started only if LSP server returns
 ---   list of locations and not a single location.
@@ -1086,7 +1095,6 @@ end
 ---
 ---@return nil Nothing is returned.
 MiniExtra.pickers.lsp = function(local_opts, opts)
-  if vim.fn.has('nvim-0.8') == 0 then H.error('`pickers.lsp` requires Neovim>=0.8.') end
   local pick = H.validate_pick('lsp')
   local_opts = vim.tbl_deep_extend('force', { scope = nil, symbol_query = '' }, local_opts or {})
 
@@ -1132,7 +1140,7 @@ MiniExtra.pickers.marks = function(local_opts, opts)
       if path == nil then buf_id = info.pos[1] end
 
       local line, col = info.pos[2], math.abs(info.pos[3])
-      local text = string.format('%s │ %s%s:%s', info.mark:sub(2), path == nil and '' or (path .. ':'), line, col)
+      local text = string.format('%s │ %s%s│%s', info.mark:sub(2), path == nil and '' or (path .. '│'), line, col)
       table.insert(items, { text = text, bufnr = buf_id, path = path, lnum = line, col = col })
     end
   end
@@ -1149,20 +1157,26 @@ end
 --- Pick from |v:oldfiles| entries representing readable files.
 ---
 ---@param local_opts __extra_pickers_local_opts
----   Not used at the moment.
+---   Possible fields:
+---   - <current_dir> `(boolean)` - whether to return files only from current
+---     working directory and its subdirectories. Default: `false`.
 ---@param opts __extra_pickers_opts
 ---
 ---@return __extra_pickers_return
 MiniExtra.pickers.oldfiles = function(local_opts, opts)
   local pick = H.validate_pick('oldfiles')
+  local_opts = vim.tbl_deep_extend('force', { current_dir = false }, local_opts or {})
   local oldfiles = vim.v.oldfiles
-  if not vim.tbl_islist(oldfiles) then H.error('`pickers.oldfiles` picker needs valid `v:oldfiles`.') end
+  if not H.islist(oldfiles) then H.error('`pickers.oldfiles` picker needs valid `v:oldfiles`.') end
 
+  local show_all = not local_opts.current_dir
   local items = vim.schedule_wrap(function()
-    local cwd = pick.get_picker_opts().source.cwd
+    local cwd = pick.get_picker_opts().source.cwd .. '/'
     local res = {}
     for _, path in ipairs(oldfiles) do
-      if vim.fn.filereadable(path) == 1 then table.insert(res, H.short_path(path, cwd)) end
+      if vim.fn.filereadable(path) == 1 and (show_all or vim.startswith(path, cwd)) then
+        table.insert(res, H.short_path(path, cwd))
+      end
     end
     pick.set_picker_items(res)
   end)
@@ -1324,7 +1338,6 @@ end
 ---
 --- Pick and navigate to |treesitter| nodes of current buffer.
 --- Notes:
---- - Requires Neovim>=0.8.
 --- - Requires active tree-sitter parser in the current buffer.
 ---
 ---@param local_opts __extra_pickers_local_opts
@@ -1333,7 +1346,6 @@ end
 ---
 ---@return __extra_pickers_return
 MiniExtra.pickers.treesitter = function(local_opts, opts)
-  if vim.fn.has('nvim-0.8') == 0 then H.error('`pickers.treesitter` requires Neovim>=0.8.') end
   local pick = H.validate_pick('treesitter')
 
   local buf_id = vim.api.nvim_get_current_buf()
@@ -1349,7 +1361,7 @@ MiniExtra.pickers.treesitter = function(local_opts, opts)
         local lnum, col, end_lnum, end_col = child:range()
         lnum, col, end_lnum, end_col = lnum + 1, col + 1, end_lnum + 1, end_col + 1
         local indent = string.rep(' ', depth)
-        local text = string.format('%s%s (%s:%s - %s:%s)', indent, child:type() or '', lnum, col, end_lnum, end_col)
+        local text = string.format('%s%s (%s│%s - %s│%s)', indent, child:type() or '', lnum, col, end_lnum, end_col)
         local item = { text = text, bufnr = buf_id, lnum = lnum, col = col, end_lnum = end_lnum, end_col = end_col }
         table.insert(items, item)
 
@@ -1634,8 +1646,8 @@ H.pick_prepend_position = function(item)
 
   path = vim.fn.fnamemodify(path, ':p:.')
   local text = item.text or ''
-  local suffix = text == '' and '' or (': ' .. text)
-  item.text = string.format('%s:%s:%s%s', path, item.lnum or 1, item.col or 1, suffix)
+  local suffix = text == '' and '' or ('│ ' .. text)
+  item.text = string.format('%s│%s│%s%s', path, item.lnum or 1, item.col or 1, suffix)
   return item
 end
 
@@ -1816,8 +1828,6 @@ H.lsp_make_on_list = function(source, opts)
   end
 
   -- Highlight items with highlight group corresponding to the symbol kind.
-  -- Note: `@type` groups were introduced in Neovim 0.8 which is minimal
-  -- version for `pickers.lsp` to work.
   local show
   if source == 'document_symbol' or source == 'workspace_symbol' then
     local pick = H.validate_pick()
@@ -2012,9 +2022,13 @@ H.full_path = function(path) return (vim.fn.fnamemodify(path, ':p'):gsub('(.)/$'
 
 H.short_path = function(path, cwd)
   cwd = cwd or vim.fn.getcwd()
+  cwd = cwd:sub(-1) == '/' and cwd or (cwd .. '/')
   if not vim.startswith(path, cwd) then return vim.fn.fnamemodify(path, ':~') end
   local res = path:sub(cwd:len() + 1):gsub('^/+', ''):gsub('/+$', '')
   return res
 end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
 
 return MiniExtra

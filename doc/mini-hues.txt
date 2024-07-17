@@ -63,7 +63,6 @@ Supported highlight groups:
     - 'rcarriga/nvim-notify'
     - 'rlane/pounce.nvim'
     - 'romgrk/barbar.nvim'
-    - 'simrat39/symbols-outline.nvim'
     - 'stevearc/aerial.nvim'
     - 'williamboman/mason.nvim'
 
@@ -125,10 +124,14 @@ Activate it as regular |colorscheme|. Get currently active config with
 Module setup
 
 Usage ~
-
-`require('mini.hues').setup({ background = '#11262d', foreground = '#c0c8cc' })`
-(add/change input table as you like)
-
+>lua
+  require('mini.hues').setup({
+    -- Use config table as you like
+    -- Needs both `background` and `foreground` fields present
+    background = '#11262d',
+    foreground = '#c0c8cc',
+  })
+<
 ------------------------------------------------------------------------------
                                                                *MiniHues.config*
                                `MiniHues.config`
@@ -138,7 +141,7 @@ See |MiniHues.make_palette()| for more information about how certain
 settings affect output color scheme.
 
 Default values:
->
+>lua
   MiniHues.config = {
     -- **Required** base colors as '#rrggbb' hex strings
     background = nil,

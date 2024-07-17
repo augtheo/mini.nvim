@@ -71,19 +71,14 @@ local validate_trigger_keymap = function(mode, keys, buf_id)
   local lua_cmd = string.format(
     [[vim.api.nvim_buf_call(%s, function() return vim.fn.maparg(%s, %s, false, true).desc end)]],
     buf_id,
-    vim.inspect(replace_termcodes(keys)),
+    vim.inspect(keys),
     vim.inspect(mode)
   )
   local map_desc = child.lua_get(lua_cmd)
   if map_desc == vim.NIL then error('No such trigger.') end
 
-  -- Neovim<0.8 doesn't have `keytrans()` used inside description
-  if child.fn.has('nvim-0.8') == 0 then
-    eq(type(map_desc), 'string')
-  else
-    local desc_pattern = 'keys after.*"' .. vim.pesc(keys) .. '"'
-    expect.match(map_desc, desc_pattern)
-  end
+  local desc_pattern = 'keys after.*"' .. vim.pesc(keys) .. '"'
+  expect.match(map_desc, desc_pattern)
 end
 
 local validate_no_trigger_keymap = function(mode, keys, buf_id)
@@ -322,8 +317,6 @@ T['setup()']['creates triggers only in listed buffers'] = function()
 end
 
 T['setup()']['ensures valid triggers on `LspAttach` event'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`LspAttach` is added in Neovim 0.8') end
-
   child.set_size(10, 40)
   child.cmd([[au LspAttach * lua vim.keymap.set('n', '<Space>a', ':echo 1<CR>', { buffer = true })]])
   load_module({ triggers = { { mode = 'n', keys = '<Space>' } }, window = { delay = 0 } })
@@ -540,14 +533,18 @@ T['disable_all_triggers()']['works'] = function()
     return rhs:find('echo 1') ~= nil
   end
 
-  load_module({ triggers = { { mode = 'n', keys = '<Space>' } } })
+  load_module({ triggers = { { mode = 'n', keys = '<Space>' }, { mode = 'i', keys = '<C-R>' } } })
   validate_trigger_keymap('n', '<Space>', init_buf_id)
+  validate_trigger_keymap('i', '<C-R>', init_buf_id)
   validate_trigger_keymap('n', '<Space>', other_buf_id)
+  validate_trigger_keymap('i', '<C-R>', other_buf_id)
   eq(has_custom_mapping_in_disabled_buffer(), true)
 
   disable_all_triggers()
   validate_no_trigger_keymap('n', '<Space>', init_buf_id)
+  validate_no_trigger_keymap('i', '<C-R>', init_buf_id)
   validate_no_trigger_keymap('n', '<Space>', other_buf_id)
+  validate_no_trigger_keymap('i', '<C-R>', other_buf_id)
   eq(has_custom_mapping_in_disabled_buffer(), true)
 end
 
@@ -572,12 +569,14 @@ T['disable_buf_triggers()'] = new_set()
 local disable_buf_triggers = forward_lua('MiniClue.disable_buf_triggers')
 
 T['disable_buf_triggers()']['works'] = function()
-  load_module({ triggers = { { mode = 'n', keys = '<Space>' } } })
+  load_module({ triggers = { { mode = 'n', keys = '<Space>' }, { mode = 'i', keys = '<C-R>' } } })
   validate_trigger_keymap('n', '<Space>')
+  validate_trigger_keymap('i', '<C-R>')
 
   -- Uses current buffer by default
   disable_buf_triggers()
   validate_no_trigger_keymap('n', '<Space>')
+  validate_no_trigger_keymap('i', '<C-R>')
 end
 
 T['disable_buf_triggers()']['allows 0 for current buffer'] = function()
@@ -679,8 +678,6 @@ local set_mapping_desc = forward_lua('MiniClue.set_mapping_desc')
 local validate_mapping_desc = function(mode, lhs, ref_desc) eq(child.fn.maparg(lhs, mode, false, true).desc, ref_desc) end
 
 T['set_mapping_desc()']['adds new description'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`set_mapping_desc()` requires Neovim>=0.8') end
-
   child.api.nvim_set_keymap('n', '<Space>a', ':echo 1<CR>', {})
 
   load_module()
@@ -689,8 +686,6 @@ T['set_mapping_desc()']['adds new description'] = function()
 end
 
 T['set_mapping_desc()']['updates existing description'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`set_mapping_desc()` requires Neovim>=0.8') end
-
   child.api.nvim_set_keymap('n', '<Space>a', ':echo 1<CR>', { desc = 'Old desc' })
 
   load_module()
@@ -699,8 +694,6 @@ T['set_mapping_desc()']['updates existing description'] = function()
 end
 
 T['set_mapping_desc()']['prefers buffer-local mapping'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`set_mapping_desc()` requires Neovim>=0.8') end
-
   child.api.nvim_set_keymap('n', '<Space>a', ':echo 1<CR>', {})
   child.api.nvim_buf_set_keymap(0, 'n', '<Space>a', ':echo 2<CR>', {})
 
@@ -715,8 +708,6 @@ T['set_mapping_desc()']['prefers buffer-local mapping'] = function()
 end
 
 T['set_mapping_desc()']['works for mapping with callback'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`set_mapping_desc()` requires Neovim>=0.8') end
-
   child.lua([[vim.keymap.set('n', '<Space>a', function() _G.been_here = true end)]])
 
   load_module()
@@ -727,8 +718,6 @@ T['set_mapping_desc()']['works for mapping with callback'] = function()
 end
 
 T['set_mapping_desc()']['validates input'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`set_mapping_desc()` requires Neovim>=0.8') end
-
   load_module()
   expect.error(function() set_mapping_desc(1, 'aaa', 'New') end, '`mode`.*string')
   expect.error(function() set_mapping_desc('n', 1, 'New') end, '`lhs`.*string')
@@ -736,8 +725,6 @@ T['set_mapping_desc()']['validates input'] = function()
 end
 
 T['set_mapping_desc()']['handles incorrect usage'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`set_mapping_desc()` requires Neovim>=0.8') end
-
   load_module()
 
   -- When no mapping found
@@ -753,6 +740,9 @@ T['gen_clues'] = new_set()
 T['gen_clues']['g()'] = new_set()
 
 T['gen_clues']['g()']['works'] = function()
+  -- Check this only on Neovim>=0.10, as there are many new built-in mappings
+  if child.fn.has('nvim-0.10') == 0 then return end
+
   child.lua([[
     local miniclue = require('mini.clue')
     miniclue.setup({
@@ -763,6 +753,11 @@ T['gen_clues']['g()']['works'] = function()
   ]])
   child.cmd('unmap gx')
   child.cmd('unmap g%')
+  if child.fn.has('nvim-0.11') == 1 then
+    child.cmd('unmap grr')
+    child.cmd('unmap gra')
+    child.cmd('unmap grn')
+  end
 
   child.set_size(66, 55)
   type_keys('g')
@@ -799,6 +794,9 @@ end
 T['gen_clues']['windows()'] = new_set()
 
 T['gen_clues']['windows()']['works'] = function()
+  -- Check this only on Neovim>=0.10, as there are many new built-in mappings
+  if child.fn.has('nvim-0.10') == 0 then return end
+
   child.lua([[
     local miniclue = require('mini.clue')
     miniclue.setup({
@@ -1062,7 +1060,7 @@ T['gen_clues']['marks()']['works'] = function()
       window = { delay = 0, config = { width = 45 } },
     })
   ]])
-  child.set_size(20, 50)
+  child.set_size(20, 48)
 
   -- Normal mode
   type_keys("'")
@@ -1327,13 +1325,15 @@ T['Showing keys']['indicates that description is truncated'] = function()
 end
 
 T['Showing keys']['respects `scroll_down` and `scroll_up` in `config.window`'] = function()
-  child.set_size(7, 40)
+  child.set_size(8, 40)
 
   --stylua: ignore
   load_module({
     clues = {
       { mode = 'n', keys = '<Space>a' }, { mode = 'n', keys = '<Space>b' },
       { mode = 'n', keys = '<Space>c' }, { mode = 'n', keys = '<Space>d' },
+      { mode = 'n', keys = '<Space>e' }, { mode = 'n', keys = '<Space>f' },
+      { mode = 'n', keys = '<Space>g' }
     },
     triggers = { { mode = 'n', keys = '<Space>' } },
     window = { delay = 0 },
@@ -1343,17 +1343,24 @@ T['Showing keys']['respects `scroll_down` and `scroll_up` in `config.window`'] =
   type_keys(' ')
   child.expect_screenshot()
 
+  -- Should not change `'scroll'` window option
+  child.lua('_G.clue_win_id = math.max(unpack(vim.api.nvim_list_wins()))')
+  local clue_win_scroll_value = child.lua_get('vim.wo[_G.clue_win_id].scroll')
+  local validate_scroll_opt = function() eq(child.lua_get('vim.wo[_G.clue_win_id].scroll'), clue_win_scroll_value) end
+
   type_keys('<C-d>')
   child.expect_screenshot()
   -- - Should not be able to scroll past edge
   type_keys('<C-d>')
   child.expect_screenshot()
+  validate_scroll_opt()
 
   type_keys('<C-u>')
   child.expect_screenshot()
   -- - Should not be able to scroll past edge
   type_keys('<C-u>')
   child.expect_screenshot()
+  validate_scroll_opt()
 
   type_keys('<Esc>')
 
@@ -1463,6 +1470,10 @@ T['Showing keys']['properly translates special keys'] = function()
 end
 
 T['Showing keys']['respects tabline, statusline, cmdheight'] = function()
+  -- Check this only on Neovim>=0.10, as there is a slight change in
+  -- highlighting command line area
+  if child.fn.has('nvim-0.10') == 0 then return end
+
   child.set_size(7, 40)
 
   --stylua: ignore
@@ -1497,10 +1508,8 @@ T['Showing keys']['respects tabline, statusline, cmdheight'] = function()
   validate()
 
   -- - Zero command line height
-  if child.fn.has('nvim-0.8') == 1 then
-    child.o.cmdheight = 0
-    validate()
-  end
+  child.o.cmdheight = 0
+  validate()
 end
 
 T['Showing keys']['reacts to `VimResized`'] = function()
@@ -1919,6 +1928,9 @@ T['Postkeys']['closes window if postkeys do not end up key querying'] = function
 end
 
 T['Postkeys']['persists window if action changes tabpage'] = function()
+  -- Check this only on Neovim>=0.10, as there are many new built-in mappings
+  if child.fn.has('nvim-0.10') == 0 then return end
+
   load_module({
     clues = { { mode = 'n', keys = '<C-w>T', desc = 'Move to new tabpage', postkeys = '<C-w>' } },
     triggers = { { mode = 'n', keys = '<C-w>' } },
@@ -2072,6 +2084,23 @@ T['Querying keys']['can `<BS>` on first element'] = function()
   -- Removes first trigger element at once, not by characters
   type_keys(',g', '<BS>', ',g', 'g')
   eq(get_test_map_count('n', ',gg'), 1)
+end
+
+T['Querying keys']['can use scroll keys when window is not shown'] = function()
+  make_test_map('n', '<Space>f')
+  make_test_map('n', '<Space><C-f>')
+  make_test_map('n', '<Space><C-b>')
+  load_module({
+    triggers = { { mode = 'n', keys = '<Space>' } },
+    window = { scroll_down = '<C-f>', scroll_up = '<C-b>' },
+  })
+  validate_trigger_keymap('n', '<Space>')
+
+  type_keys(' ', '<C-f>')
+  eq(get_test_map_count('n', ' <C-f>'), 1)
+
+  type_keys(' ', '<C-b>')
+  eq(get_test_map_count('n', ' <C-b>'), 1)
 end
 
 T['Querying keys']['allows reaching longest keymap'] = function()
@@ -3043,8 +3072,6 @@ T['Reproducing keys']["respects 'clipboard'"] = function()
 end
 
 T['Reproducing keys']['works with <F*> keys'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('Neovim 0.7 has issues with <F*> keys.') end
-
   child.lua([[vim.g.mapleader = vim.api.nvim_replace_termcodes('<F2>', true, true, true)]])
   child.cmd('nnoremap <Leader>a <Cmd>lua _G.n = (_G.n or 0) + 1<CR>')
   child.cmd('nnoremap <F3>b <Cmd>lua _G.m = (_G.m or 0) + 1<CR>')
@@ -3061,14 +3088,7 @@ T['Reproducing keys']['works with <F*> keys'] = function()
   eq(child.lua_get('_G.m'), 1)
 end
 
-T["'mini.nvim' compatibility"] = new_set({
-  hooks = {
-    pre_case = function()
-      -- TODO: Update during move into 'mini.nvim'
-      child.cmd('set rtp+=deps/mini.nvim')
-    end,
-  },
-})
+T["'mini.nvim' compatibility"] = new_set()
 
 local setup_mini_module = function(name, config)
   local lua_cmd = string.format([[_G.has_module, _G.module = pcall(require, 'mini.%s')]], name)

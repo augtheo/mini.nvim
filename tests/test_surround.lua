@@ -250,7 +250,7 @@ T['gen_spec']['input']['treesitter()']['works with empty region'] = function()
   type_keys('sh', 'o')
   poke_eventloop()
   -- It highlights `local` differently from other places
-  child.expect_screenshot()
+  if child.fn.has('nvim-0.10') == 1 then child.expect_screenshot() end
 
   -- Edge case for empty region on end of last line
   set_lines(lines)
@@ -344,7 +344,12 @@ T['gen_spec']['input']['treesitter()']['validates builtin treesitter presence'] 
   child.cmdheight = 40
 
   -- Query
-  child.lua('vim.treesitter.get_query = function() return nil end')
+  local lua_cmd = string.format(
+    'vim.treesitter.%s = function() return nil end',
+    child.fn.has('nvim-0.9') == 1 and 'query.get' or 'get_query'
+  )
+  child.lua(lua_cmd)
+
   expect.error(
     function() type_keys('sd', 'F', '<CR>') end,
     vim.pesc([[(mini.surround) Can not get query for buffer 1 and language 'lua'.]])
@@ -463,7 +468,7 @@ T['Add surrounding']['respects `config.respect_selection_type` in blockwise mode
   -- General test in Operator-pending mode
   set_lines({ 'aaaaa', 'bbbbb' })
 
-  -- - Create mark to be able to perform non-trival movement
+  -- - Create mark to be able to perform non-trivial movement
   set_cursor(2, 3)
   type_keys('ma')
 
@@ -536,22 +541,22 @@ T['Add surrounding']['works with multibyte characters'] = function()
 end
 
 T['Add surrounding']['works on whole line'] = function()
-  -- Should ignore indent at left mark but not whitespace at right
-  -- Should work with both tabs and spaces
-  validate_edit({ ' \t aaa ', '' }, { 1, 0 }, { ' \t (aaa )', '' }, { 1, 4 }, type_keys, 'sa', '_', ')')
-  validate_edit({ ' \t aaa ', '' }, { 1, 0 }, { ' \t (aaa )', '' }, { 1, 4 }, type_keys, 'V', 'sa', ')')
+  -- Should ignore both indent (leading whitespace) at start line and trailing
+  -- whitespace and end line. Should work with both tabs and spaces.
+  validate_edit({ ' \t aaa\t ', '' }, { 1, 0 }, { ' \t (aaa)\t ', '' }, { 1, 4 }, type_keys, 'sa', '_', ')')
+  validate_edit({ ' \t aaa\t ', '' }, { 1, 0 }, { ' \t (aaa)\t ', '' }, { 1, 4 }, type_keys, 'V', 'sa', ')')
 end
 
 T['Add surrounding']['works on multiple lines'] = function()
   local f = function() type_keys('sa', 'ap', ')') end
   local f_vis = function() type_keys('Vap', 'sa', ')') end
 
-  -- Should ignore indent at left mark but not whitespace at right
-  -- Should work with both tabs and spaces
-  validate_edit({ ' \t aaa ', 'bbb', ' ccc' }, { 1, 0 }, { ' \t (aaa ', 'bbb', ' ccc)' }, { 1, 4 }, f)
-  validate_edit({ ' \t aaa ', 'bbb', ' ccc' }, { 1, 0 }, { ' \t (aaa ', 'bbb', ' ccc)' }, { 1, 4 }, f_vis)
-  validate_edit({ ' \t aaa ', ' ' }, { 1, 0 }, { ' \t (aaa ', ' )' }, { 1, 4 }, f)
-  validate_edit({ ' \t aaa ', ' ' }, { 1, 0 }, { ' \t (aaa ', ' )' }, { 1, 4 }, f_vis)
+  -- Should ignore both indent (leading whitespace) at start line and trailing
+  -- whitespace and end line. Should work with both tabs and spaces.
+  validate_edit({ ' \t aaa ', 'bbb', ' ccc\t ' }, { 1, 0 }, { ' \t (aaa ', 'bbb', ' ccc)\t ' }, { 1, 4 }, f)
+  validate_edit({ ' \t aaa ', 'bbb', ' ccc\t ' }, { 1, 0 }, { ' \t (aaa ', 'bbb', ' ccc)\t ' }, { 1, 4 }, f_vis)
+  validate_edit({ ' \t aaa ', '\t ' }, { 1, 0 }, { ' \t (aaa ', ')\t ' }, { 1, 4 }, f)
+  validate_edit({ ' \t aaa ', '\t ' }, { 1, 0 }, { ' \t (aaa ', ')\t ' }, { 1, 4 }, f_vis)
 end
 
 T['Add surrounding']['works with multiline output surroundings'] = function()

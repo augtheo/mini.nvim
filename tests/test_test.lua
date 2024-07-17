@@ -16,6 +16,9 @@ local set_lines = function(...) return child.set_lines(...) end
 local get_lines = function(...) return child.get_lines(...) end
 --stylua: ignore end
 
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+local islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
+
 local get_latest_message = function() return child.cmd_capture('1messages') end
 
 local get_ref_path = function(name) return string.format('tests/dir-test/%s', name) end
@@ -73,6 +76,8 @@ local T = new_set({
   hooks = {
     pre_case = function()
       child.setup()
+      -- Mock UI so that default reporter is as if used interactively
+      child.lua('vim.api.nvim_list_uis = function() return { 1 } end')
       load_module()
     end,
     post_once = child.stop,
@@ -323,6 +328,11 @@ T['run_file()']['works'] = function()
   eq(last_desc, { 'run_at_location()', 'extra case' })
 end
 
+T['run_file()']['normalizes input path'] = function()
+  child.lua('MiniTest.run_file(...)', { './' .. get_ref_path('testref_run.lua') })
+  eq(child.lua_get('MiniTest.current.all_cases[1].desc[1]'), 'tests/dir-test/testref_run.lua')
+end
+
 T['run_at_location()'] = new_set()
 
 T['run_at_location()']['works with non-default input'] = new_set({ parametrize = { { 3 }, { 4 }, { 5 } } }, {
@@ -359,8 +369,11 @@ T['collect()'] = new_set()
 T['collect()']['works'] = function()
   child.lua('_G.cases = MiniTest.collect()')
 
+  -- TODO: Remove after compatibility with Neovim=0.9 is dropped
+  child.lua([[_G.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist]])
+
   -- Should return array of cases
-  eq(child.lua_get('vim.tbl_islist(_G.cases)'), true)
+  eq(child.lua_get('_G.islist(_G.cases)'), true)
 
   local keys = child.lua_get('vim.tbl_keys(_G.cases[1])')
   table.sort(keys)
@@ -1192,8 +1205,8 @@ T['child']['get_screenshot()']['works'] = function()
 
   -- Structure
   eq(type(screenshot), 'table')
-  eq(vim.tbl_islist(screenshot.text), true)
-  eq(vim.tbl_islist(screenshot.attr), true)
+  eq(islist(screenshot.text), true)
+  eq(islist(screenshot.attr), true)
 
   local n_lines, n_cols = child.o.lines, child.o.columns
 
@@ -1201,8 +1214,8 @@ T['child']['get_screenshot()']['works'] = function()
   eq(#screenshot.attr, n_lines)
 
   for i = 1, n_lines do
-    eq(vim.tbl_islist(screenshot.text[i]), true)
-    eq(vim.tbl_islist(screenshot.attr[i]), true)
+    eq(islist(screenshot.text[i]), true)
+    eq(islist(screenshot.attr[i]), true)
 
     eq(#screenshot.text[i], n_cols)
     eq(#screenshot.attr[i], n_cols)
@@ -1290,24 +1303,7 @@ T['child']['get_screenshot()']['`tostring()`']['makes proper line numbers'] = fu
   validate({ 1, '001' }, { 10, '010' }, { 100, '100' })
 end
 
-T['child']['get_screenshot()']['adds a note with floating windows in Neovim<=0.7'] = function()
-  if child.fn.has('nvim-0.8') == 1 then return end
-
-  local buf_id = child.api.nvim_create_buf(true, true)
-  child.api.nvim_buf_set_lines(buf_id, 0, -1, true, { 'aaa' })
-  child.api.nvim_open_win(buf_id, false, { relative = 'editor', width = 3, height = 1, row = 0, col = 0 })
-
-  expect.no_error(child.get_screenshot)
-  eq(
-    MiniTest.current.case.exec.notes,
-    { '`child.get_screenshot()` will not show visible floating windows in this version. Use Neovim>=0.8.' }
-  )
-  MiniTest.current.case.exec.notes = {}
-end
-
-T['child']['get_screenshot()']['works with floating windows in Neovim>=0.8'] = function()
-  if child.fn.has('nvim-0.8') == 0 then return end
-
+T['child']['get_screenshot()']['works with floating windows'] = function()
   -- This setup should result into displayed text 'bb a': 'bb ' from floating
   -- window, 'aa' - from underneath text
   set_lines({ 'aaaa' })

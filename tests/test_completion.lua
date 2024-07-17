@@ -241,6 +241,7 @@ end
 T['Autocompletion']['works without LSP clients'] = function()
   -- Mock absence of LSP
   child.lsp.buf_get_clients = function() return {} end
+  child.lsp.get_clients = function() return {} end
 
   type_keys('i', 'aab aac aba a')
   eq(get_completion(), {})
@@ -287,6 +288,45 @@ T['Autocompletion']['uses fallback'] = function()
   type_keys('k')
   eq(get_completion(), { 'Jackpot' })
 end
+
+T['Autocompletion']['forces new LSP completion at LSP trigger'] = new_set(
+  -- Test with different source functions because they (may) differ slightly on
+  -- how certain completion events (`CompleteDonePre`) are triggered, which
+  -- affects whether autocompletion is done in certain cases (for example, when
+  -- completion candidate is fully typed).
+  -- See https://github.com/echasnovski/mini.nvim/issues/813
+  { parametrize = { { 'completefunc' }, { 'omnifunc' } } },
+  {
+    test = function(source_func)
+      child.set_size(16, 20)
+      reload_module({ lsp_completion = { source_func = source_func } })
+      child.api.nvim_set_current_buf(child.api.nvim_create_buf(true, false))
+
+      --stylua: ignore
+      local all_months = {
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      }
+      type_keys('i', '<C-Space>')
+      eq(get_completion(), all_months)
+
+      type_keys('May.')
+      eq(child.fn.pumvisible(), 0)
+      sleep(test_times.completion - 10)
+      eq(child.fn.pumvisible(), 0)
+      sleep(10 + 10)
+      eq(get_completion(), all_months)
+      child.expect_screenshot()
+
+      -- Should show only LSP without fallback, i.e. typing LSP trigger should
+      -- show no completion if there is no LSP completion (as is imitated
+      -- inside commented lines).
+      type_keys('<Esc>o', '# .')
+      sleep(test_times.completion + 10)
+      child.expect_screenshot()
+    end,
+  }
+)
 
 T['Autocompletion']['respects `config.delay.completion`'] = function()
   child.lua('MiniCompletion.config.delay.completion = 300')
@@ -468,6 +508,44 @@ T['Manual completion']['applies `additionalTextEdits` from "completionItem/resol
   eq(get_lines(), { 'January' })
 end
 
+T['Manual completion']['prefers completion range from LSP response'] = function()
+  set_lines({})
+  type_keys('i', 'months.')
+  -- Mock `textEdit` as in `tsserver` when called after `.`
+  child.lua([[_G.mock_textEdit = {
+    pos = vim.api.nvim_win_get_cursor(0),
+    new_text = function(name) return '.' .. name end,
+  } ]])
+  type_keys('<C-space>')
+
+  eq(get_completion('abbr'), { 'April', 'August' })
+  eq(get_completion('word'), { '.April', '.August' })
+  type_keys('<C-n>', '<C-y>')
+  eq(get_lines(), { 'months.April' })
+  eq(get_cursor(), { 1, 12 })
+end
+
+T['Manual completion']['respects `filterText` from LSP response'] = function()
+  set_lines({})
+  type_keys('i', 'months.')
+  -- Mock `textEdit` and `filterText` as in `tsserver` when called after `.`
+  -- (see https://github.com/echasnovski/mini.nvim/issues/306#issuecomment-1602245446)
+  child.lua([[
+    _G.mock_textEdit = {
+      pos = vim.api.nvim_win_get_cursor(0),
+      new_text = function(name) return '[' .. name .. ']' end,
+    }
+    _G.mock_filterText = function(name) return '.' .. name end
+  ]])
+  type_keys('<C-space>')
+
+  eq(get_completion('abbr'), { 'April', 'August' })
+  eq(get_completion('word'), { '[April]', '[August]' })
+  type_keys('<C-n>', '<C-y>')
+  eq(get_lines(), { 'months[April]' })
+  eq(get_cursor(), { 1, 13 })
+end
+
 T['Manual completion']['respects `vim.{g,b}.minicompletion_disable`'] = new_set({
   parametrize = { { 'g' }, { 'b' } },
 }, {
@@ -594,6 +672,23 @@ T['Information window']['implements debounce-style delay'] = function()
   sleep(10 + 1)
   validate_single_floating_win({ lines = { 'Month #06' } })
 end
+
+T['Information window']['is closed when forced outside of Insert mode'] = new_set(
+  { parametrize = { { '<Esc>' }, { '<C-c>' } } },
+  {
+    test = function(key)
+      type_keys('i', 'J', '<C-Space>')
+      eq(get_completion(), { 'January', 'June', 'July' })
+
+      type_keys('<C-n>')
+      sleep(test_times.info + 5)
+      validate_single_floating_win({ lines = { 'Month #01' } })
+
+      type_keys(key)
+      eq(get_floating_windows(), {})
+    end,
+  }
+)
 
 T['Information window']['handles all buffer wipeout'] = function()
   validate_info_win(test_times.info)
@@ -742,6 +837,20 @@ T['Signature help']['implements debounce-style delay'] = function()
   sleep(test_times.signature + 1)
   validate_single_floating_win({ lines = { 'abc(param1, param2)' } })
 end
+
+T['Signature help']['is closed when forced outside of Insert mode'] = new_set(
+  { parametrize = { { '<Esc>' }, { '<C-c>' } } },
+  {
+    test = function(key)
+      type_keys('i', 'abc(')
+      sleep(test_times.signature + 5)
+      validate_single_floating_win({ lines = { 'abc(param1, param2)' } })
+
+      type_keys(key)
+      eq(get_floating_windows(), {})
+    end,
+  }
+)
 
 T['Signature help']['handles all buffer wipeout'] = function()
   validate_signature_win(test_times.signature)

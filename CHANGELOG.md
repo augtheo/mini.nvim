@@ -1,4 +1,140 @@
-# Version 0.11.0.9999
+# Version 0.13.0.9000
+
+- Stop official support of Neovim 0.7.
+- Update help files to use code blocks with language annotation, as it results in a better code highlighting. Implies enabled tree-sitter highlighting in 'help' filetype:
+    - It is default in Neovim>=0.10.
+    - Tree-sitter parser is built-in in Neovim 0.9.x, needs manual enabling via `vim.treesitter.start()`.
+    - Has visual regressions on Neovim 0.8.0 and 0.8.1 without enabled tree-sitter (code blocks are highlighted as normal text). Use 0.8.2 or newer.
+- Universally prefer 'mini.icons' module over 'nvim-tree/nvim-web-devicons'.
+
+## mini.doc
+
+- BREAKING FEATURE: update `afterlines_to_code()` to result into Lua code block in help file by using `>lua` at the start instead of `>`. NOTE: users need enabled `help` tree-sitter parser (which is default on Neovim>=0.9) for code blocks to have proper highlighting.
+
+## mini.extra
+
+- FEATURE: update `pickers.oldfiles()` to have `current_dir` option which if `true` shows files only from picker's working directory. By @abeldekat, PR #997.
+- BREAKING FEATURE: use "│" as line/position separator instead of ":". This aligns with changes in 'mini.pick' and makes line/position more easily visible.
+
+## mini.hipatterns
+
+- BREAKING FEATURE: update `compute_hex_color_group()` to compute based on combination of `hex_color` and `style`, opposed to just `hex_color`. This allows simultaneous usage of several styles in user's custom highlighters.
+
+## mini.files
+
+- FEATURE: prefer using 'mini.icons' as icon provider.
+
+## mini.icons
+
+- Introduction of a new module.
+
+## mini.pick
+
+- FEATURE: prefer using 'mini.icons' as icon provider.
+- BREAKING: encoding line or position in string items has changed:
+    - Use "\0" (null character; use "\000" form if it is in a string before digit) instead of ":" as delimiter. This makes it work with files similar to ":" position encoding (like "time_12:34:56"). This only matters for custom sources which provide line or position in string items.
+    - Update `default_show()` to display "│" character instead of "\0" in item's string representation (previously was ":"). In particular, this changes how line/position is displayed in `grep` and `grep_live` built-in pickers. This change was done because "│" is more visible as separator.
+
+## mini.starter
+
+- BREAKING: change filetype of Starter buffer from 'starter' to 'ministarter'. This is a more robust value and more aligned with other modules.
+
+## mini.statusline
+
+- BREAKING FEATURE: update `section_fileinfo()` to show non-empty filetype even in not normal buffers (like plugin's scratch buffers, help, quickfix, etc.). Previously it showed nothing, which was a mistake as filetype can be a valuable information.
+- FEATURE: prefer using 'mini.icons' as icon provider for `section_fileinfo()`.
+
+## mini.surround
+
+- BREAKING FEATURE: adding surrounding in linewise mode now also ignores trailing whitespace on the last line (same as it ignores indent on the first line).
+
+## mini.tabline
+
+- FEATURE: prefer using 'mini.icons' as icon provider.
+
+
+# Version 0.13.0
+
+## mini.comment
+
+- BREAKING FEATURE: blank lines are now completely ignored when deciding the toggling action. In practice this means that if target block consists only from commented and/or blank lines, it will be uncommented rather than commented.
+
+- BREAKING: Whitespace in comment parts is now treated more explicitly. In particular:
+    - Default `options.pad_comment_parts = true` now more explicitly means that any value of 'commentstring' is transformed so that comment parts have exactly single space inner padding.
+
+      Example: any `/*%s*/`, ` /* %s */ `, or `/*  %s  */` is equivalent to having `/* %s */`.
+
+    - Detection of whether consecutive lines are commented or not does not depend on whitespace in comment parts. Uncommenting is first attempted with exact comment parts and falls back on trying its trimmed parts.
+
+      Example of toggling comment on single line with `/* %s */` 'commentstring' value:
+        - `/* this is commented */` -> `this is commented`.
+        - `/*this is also commented */` -> `this is also commented ` (notice trailing space).
+
+    - Commenting blank lines is done with trimmed comments parts, while uncommenting explicitly results into empty lines.
+
+- FEATURE: Support dot-repeat after initial commenting is done for visual selection; repeating is done for same relative range.
+
+## mini.deps
+
+- FEATURE: add `MiniDepsMsgBreaking` highlight group for messages indicating a breaking change in a conventional commit style.
+
+## mini.diff
+
+- Introduction of a new module.
+
+## mini.files
+
+- FEATURE: add new `MiniFilesExplorerOpen` and `MiniFilesExplorerClose` events.
+
+## mini.git
+
+- Introduction of a new module.
+
+## mini.hues
+
+- BREAKING FEATURE: update some highlight groups for better usability:
+    - `DiffChange` and `DiffText` - make changed diff lines have colored background.
+    - `Folded` - make folds differ from `CursorLine`.
+    - `QuickFixLine` - make current quickfix item differ from `CursorLine`.
+
+## mini.map
+
+- FEATURE: add `gen_integration.diff()` which highlights general diff hunks from 'mini.diff'.
+
+## mini.pick
+
+- BREAKING: stop trying to parse path for special format ("path:row" and "path:row:col") if supplied inside a table item. This made impossible working with paths containing ":".
+- FEATURE: respect general URI format for paths inside table items.
+- Update `builtin.files()` to use table items when string item might be ambiguous.
+
+## mini.starter
+
+- Explicitly block all events in `open()` during startup for a better performance.
+
+## mini.statusline
+
+- BREAKING: `section_diagnostics()` now depends only on defined diagnostic. This means:
+    - Something is shown **only** if there is any diagnostic actually present in the buffer. No diagnostic entries - nothing is shown.
+    Previously it did not show if there was no LSP servers attached (as initially diagnostics came only from LSP) or buffer was not normal.
+    - Fallback icon is "Diag" instead of "LSP".
+- FEATURE: `section_diagnostics()` now supports `signs` table option to customize signs for severity levels.
+- BREAKING FEATURE: `section_git()` now prefers using data from 'mini.git' with fallback on pure HEAD data from 'lewis6991/gistigns.nvim'.
+- FEATURE: add `section_diff()` to show data from 'mini.diff' with fallback on diff data from 'lewis6991/gistigns.nvim'.
+- FEATURE: add `section_lsp()` to show indicator of LSP servers attached to the buffer.
+- BREAKING FEATURE: update default active content:
+    - Add `section_diff()` (shows diff data near  icon) following refactor of `section_git()`.
+    - Add `section_lsp()` (shows number of attached LSP servers near 󰰎 icon) following refactor of `section_diagnostics()`.
+
+## mini.tabline
+
+- FEATURE: Implement `config.format` for custom label formatting.
+
+## mini.test
+
+- BREAKING FEATURE: child process is now created with extra `--headless --cmd "set lines=24 columns=80"` arguments making it headless but still reasonably similar to fully functioning Neovim during interactive usage. This change should generally not break a lot of things, while enabling a faster and more robust test execution.
+
+
+# Version 0.12.0
 
 ## mini.basics
 
@@ -12,6 +148,14 @@ vim.keymap.set('i', '<C-z>', '<C-g>u<Esc>[s1z=`]a<C-g>u', { desc = 'Correct late
 - FEATURE: Add `tab:> ` to 'listchars' option when `options.extra_ui` is set. This prevents showing `^I` instead of a tab and actual value comes from Neovim's default.
 - FEATURE: Set `termguicolors` only on Neovim<0.10, as later versions should have it on by default (if terminal emulator supports it).
 
+## mini.comment
+
+- FEATURE: Hooks are now called with data about commenting action.
+
+## mini.deps
+
+Introduction of a new module.
+
 ## mini.doc
 
 - BREAKING: Stop using `:echo` to display messages and warnings in favor of `vim.notify()`.
@@ -21,10 +165,20 @@ vim.keymap.set('i', '<C-z>', '<C-g>u<Esc>[s1z=`]a<C-g>u', { desc = 'Correct late
 ## mini.files
 
 - FEATURE: Update `go_in()` to have `close_on_file` option.
+- Show warning if action is set to override existing path.
+
+## mini.hues
+
+- BREAKING FEATURE: Update verbatim text (`@text.literal` and `@markup.raw`) color to be distinctive instead of dimmed.
+- FEATURE: Add support for new standard tree-sitter captures on Neovim>=0.10 (see https://github.com/neovim/neovim/pull/27067).
 
 ## mini.misc
 
 - Update `bench_time()` to use `vim.loop.hrtime()` (as better designed for benchmarking) instead of `vim.loop.gettimeofday()`.
+
+## mini.notify
+
+Introduction of a new module.
 
 ## mini.pick
 

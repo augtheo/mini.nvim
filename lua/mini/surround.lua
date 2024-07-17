@@ -25,7 +25,7 @@
 ---       followed by balanced '()'). In "input" finds function call, in
 ---       "output" prompts user to enter function name.
 ---     - 't' - tag. In "input" finds tag with same identifier, in "output"
----       prompts user to enter tag name.
+---       prompts user to enter tag name with possible attributes.
 ---     - All symbols in brackets '()', '[]', '{}', '<>". In "input' represents
 ---       balanced brackets (open - with whitespace pad, close - without), in
 ---       "output" - left and right parts of brackets.
@@ -82,10 +82,10 @@
 ---
 --- Extended mappings (temporary force "prev"/"next" search methods):
 --- - `sdnf` - delete (`sd`) next (`n`) function call (`f`).
---- - `srlf(` - replace (`sd`) last (`l`) function call (`f`) with padded
+--- - `srlf(` - replace (`sr`) last (`l`) function call (`f`) with padded
 ---   bracket (`(`).
---- - `2sfnt` - find (`sf`) second (2) next (`n`) tag (`t`).
---- - `shl}` - highlight (`sh`) last (`l`) second (`2`) curly bracket (`}`).
+--- - `2sfnt` - find (`sf`) second (`2`) next (`n`) tag (`t`).
+--- - `2shl}` - highlight (`sh`) last (`l`) second (`2`) curly bracket (`}`).
 ---
 --- # Comparisons ~
 ---
@@ -195,9 +195,13 @@
 ---   whitespace: open includes it left and right parts, close does not.
 --- - Output value of `b` alias is same as `)`. For `q` alias - same as `"`.
 --- - Default surrounding is activated for all characters which are not
----   configured surrounding identifiers. Note: due to special handling of
----   underlying `x.-x` Lua pattern (see |MiniSurround-search-algorithm|), it
----   doesn't really support non-trivial `[count]` for "cover" search method.
+---   configured surrounding identifiers. Notes:
+---     - Due to special handling of underlying `x.-x` Lua pattern
+---       (see |MiniSurround-search-algorithm|), it doesn't really support
+---       non-trivial `[count]` for "cover" search method.
+---     - When cursor is exactly on the identifier character while there are
+---       two matching candidates on both left and right, the one resulting in
+---       region with smaller width is preferred.
 ---@tag MiniSurround-surround-builtin
 
 --- Note: this is similar to |MiniAi-glossary|.
@@ -205,15 +209,21 @@
 --- - REGION - table representing region in a buffer. Fields: <from> and
 ---   <to> for inclusive start and end positions (<to> might be `nil` to
 ---   describe empty region). Each position is also a table with line <line>
----   and column <col> (both start at 1). Examples:
----   - `{ from = { line = 1, col = 1 }, to = { line = 2, col = 1 } }`
----   - `{ from = { line = 10, col = 10 } }` - empty region.
+---   and column <col> (both start at 1). Examples: >lua
+---
+---     { from = { line = 1, col = 1 }, to = { line = 2, col = 1 } }
+---
+---     -- Empty region
+---     { from = { line = 10, col = 10 } }
+--- <
 --- - REGION PAIR - table representing regions for left and right surroundings.
----   Fields: <left> and <right> with regions. Examples:
----   `{`
----     `left  = { from = { line = 1, col = 1 }, to = { line = 1, col = 1 } },`
----     `right = { from = { line = 1, col = 3 } },`
----   `}`
+---   Fields: <left> and <right> with regions. Examples: >lua
+---
+---     {
+---       left  = { from = { line = 1, col = 1 }, to = { line = 1, col = 1 } },
+---       right = { from = { line = 1, col = 3 } },
+---     }
+--- <
 --- - PATTERN - string describing Lua pattern.
 --- - SPAN - interval inside a string (end-exclusive). Like [1, 5). Equal
 ---   `from` and `to` edges describe empty span at that point.
@@ -223,10 +233,15 @@
 --- - NESTED PATTERN - array of patterns aimed to describe nested spans.
 --- - SPAN MATCHES NESTED PATTERN if there is a sequence of consecutively
 ---   nested spans each matching corresponding pattern within substring of
----   previous span (or input string for first span). Example:
----     Nested patterns: `{ '%b()', '^. .* .$' }` (balanced `()` with inner space)
----     Input string: `( ( () ( ) ) )`
----                   `123456789012345`
+---   previous span (or input string for first span). Example: >lua
+---
+---     -- Nested patterns for balanced `()` with inner space
+---     { '%b()', '^. .* .$' }
+---
+---     -- Example input string (with columns underneath for easier reading):
+---        "( ( () ( ) ) )"
+---     --  12345678901234
+--- <
 ---   Here are all matching spans [1, 15) and [3, 13). Both [5, 7) and [8, 10)
 ---   match first pattern but not second. All other combinations of `(` and `)`
 ---   don't match first pattern (not balanced).
@@ -234,29 +249,37 @@
 ---   (or array of them) at that place. Composed pattern basically defines all
 ---   possible combinations of nested pattern (their cartesian product).
 ---   Examples:
----     1. Composed pattern: `{ { '%b()', '%b[]' }, '^. .* .$' }`
----        Composed pattern expanded into equivalent array of nested patterns:
----         `{ '%b()', '^. .* .$' }` and `{ '%b[]', '^. .* .$' }`
----        Description: either balanced `()` or balanced `[]` but both with
----        inner edge space.
----     2. Composed pattern:
----        `{ { { '%b()', '^. .* .$' }, { '%b[]', '^.[^ ].*[^ ].$' } }, '.....' }`
----        Composed pattern expanded into equivalent array of nested patterns:
----        `{ '%b()', '^. .* .$', '.....' }` and
----        `{ '%b[]', '^.[^ ].*[^ ].$', '.....' }`
----        Description: either "balanced `()` with inner edge space" or
----        "balanced `[]` with no inner edge space", both with 5 or more characters.
+---     1. Either balanced `()` or balanced `[]` but both with inner edge space: >lua
+---
+---          -- Composed pattern
+---          { { '%b()', '%b[]' }, '^. .* .$' }
+---
+---          -- Composed pattern expanded into equivalent array of nested patterns
+---          { '%b()', '^. .* .$' } -- and
+---          { '%b[]', '^. .* .$' }
+--- <
+---     2. Either "balanced `()` with inner edge space" or "balanced `[]` with
+---        no inner edge space", both with 5 or more characters: >lua
+---
+---          -- Composed pattern
+---          { { { '%b()', '^. .* .$' }, { '%b[]', '^.[^ ].*[^ ].$' } }, '.....' }
+---
+---          -- Composed pattern expanded into equivalent array of nested patterns
+---          { '%b()', '^. .* .$', '.....' } -- and
+---          { '%b[]', '^.[^ ].*[^ ].$', '.....' }
+--- <
 --- - SPAN MATCHES COMPOSED PATTERN if it matches at least one nested pattern
 ---   from expanded composed pattern.
 ---@tag MiniSurround-glossary
 
 --- Surround specification is a table with keys:
 --- - <input> - defines how to find and extract surrounding for "input"
----   operations (like `delete`). See more in 'Input surrounding' setction.
+---   operations (like `delete`). See more in "Input surrounding" section.
 --- - <output> - defines what to add on left and right for "output" operations
----   (like `add`). See more in 'Output surrounding' section.
+---   (like `add`). See more in "Output surrounding" section.
 ---
---- Example of surround info for builtin `)` identifier: >
+--- Example of surround info for builtin `)` identifier: >lua
+---
 ---   {
 ---     input = { '%b()', '^.().*().$' },
 ---     output = { left = '(', right = ')' }
@@ -281,56 +304,56 @@
 ---       arguments and should return one of:
 ---         - Composed pattern. Useful for implementing user input. Example of
 ---           simplified variant of input surrounding for function call with
----           name taken from user prompt:
---- >
----           function()
----             local left_edge = vim.pesc(vim.fn.input('Function name: '))
----             return { string.format('%s+%%b()', left_edge), '^.-%(().*()%)$' }
----           end
+---           name taken from user prompt: >lua
+---
+---             function()
+---               local left_edge = vim.pesc(vim.fn.input('Function name: '))
+---               return { left_edge .. '%b()', '^.-%(().*()%)$' }
+---             end
 --- <
 ---         - Single region pair (see |MiniSurround-glossary|). Useful to allow
 ---           full control over surrounding. Will be taken as is. Example of
----           returning first and last lines of a buffer:
---- >
----           function()
----             local n_lines = vim.fn.line('$')
----             return {
----               left = {
----                 from = { line = 1, col = 1 },
----                 to = { line = 1, col = vim.fn.getline(1):len() },
----               },
----               right = {
----                 from = { line = n_lines, col = 1 },
----                 to = { line = n_lines, col = vim.fn.getline(n_lines):len() },
----               },
----             }
----           end
+---           returning first and last lines of a buffer: >lua
+---
+---             function()
+---               local n_lines = vim.fn.line('$')
+---               return {
+---                 left = {
+---                   from = { line = 1, col = 1 },
+---                   to = { line = 1, col = vim.fn.getline(1):len() }
+---                 },
+---                 right = {
+---                   from = { line = n_lines, col = 1 },
+---                   to = { line = n_lines, col = vim.fn.getline(n_lines):len() }
+---                 },
+---               }
+---             end
 --- <
 ---         - Array of region pairs. Useful for incorporating other instruments,
 ---           like treesitter (see |MiniSurround.gen_spec.treesitter()|). The
 ---           best region pair will be picked in the same manner as with composed
 ---           pattern (respecting options `n_lines`, `search_method`, etc.) using
 ---           output region (from start of left region to end of right region).
----           Example using edges of "best" line with display width more than 80:
---- >
----           function()
----             local make_line_region_pair = function(n)
----               local left = { line = n, col = 1 }
----               local right = { line = n, col = vim.fn.getline(n):len() }
----               return {
----                 left = { from = left, to = left },
----                 right = { from = right, to = right },
----               }
----             end
+---           Example using edges of "best" line with display width more than 80: >lua
 ---
----             local res = {}
----             for i = 1, vim.fn.line('$') do
----               if vim.fn.getline(i):len() > 80 then
----                 table.insert(res, make_line_region_pair(i))
+---             function()
+---               local make_line_region_pair = function(n)
+---                 local left = { line = n, col = 1 }
+---                 local right = { line = n, col = vim.fn.getline(n):len() }
+---                 return {
+---                   left = { from = left, to = left },
+---                   right = { from = right, to = right },
+---                 }
 ---               end
+---
+---               local res = {}
+---               for i = 1, vim.fn.line('$') do
+---                 if vim.fn.getline(i):len() > 80 then
+---                   table.insert(res, make_line_region_pair(i))
+---                 end
+---               end
+---               return res
 ---             end
----             return res
----           end
 --- <
 ---     - If there is a callable instead of assumed string pattern, it is expected
 ---       to have signature `(line, init)` and behave like `pattern:find()`.
@@ -339,8 +362,8 @@
 ---       !IMPORTANT NOTE!: it means that output's `from` shouldn't be strictly
 ---       to the left of `init` (it will lead to infinite loop). Not allowed as
 ---       last item (as it should be pattern with captures).
----       Example of matching only balanced parenthesis with big enough width:
---- >
+---       Example of matching only balanced parenthesis with big enough width: >lua
+---
 ---         {
 ---           '%b()',
 ---           function(s, init)
@@ -349,25 +372,38 @@
 ---           end,
 ---           '^.().*().$'
 ---         }
---- >
---- More examples:
---- - See |MiniSurround.gen_spec| for function wrappers to create commonly used
----   surrounding specifications.
+--- <
+--- More examples: >lua
 ---
---- - Pair of balanced brackets from set (used for builtin `b` identifier):
----   `{ { '%b()', '%b[]', '%b{}' }, '^.().*().$' }`
+---   -- Pair of balanced brackets from set (used for builtin `b` identifier)
+---   { { '%b()', '%b[]', '%b{}' }, '^.().*().$' }
 ---
---- - Lua block string: `{ '%[%[().-()%]%]' }`
+---   -- Lua block string
+---   { '%[%[().-()%]%]' }
+--- <
+--- See |MiniSurround.gen_spec| for function wrappers to create commonly used
+--- surrounding specifications.
 ---
 --- # Output surrounding ~
 ---
---- A table with <left> (plain text string) and <right> (plain text string)
---- fields. Strings can contain new lines character `\n` to add multiline parts.
+--- Specification for output can be either a table with <left> and <right> fields,
+--- or a callable returning such table (will be called with no arguments).
+--- Strings can contain new lines character "\n" to add multiline parts.
 ---
---- Examples:
---- - Lua block string: `{ left = '[[', right = ']]' }`
---- - Brackets on separate lines (indentation is not preserved):
----   `{ left = '(\n', right = '\n)' }`
+--- Examples: >lua
+---
+---   -- Lua block string
+---   { left = '[[', right = ']]' }
+---
+---   -- Brackets on separate lines (indentation is not preserved)
+---   { left = '(\n', right = '\n)' }
+---
+---   -- Function call
+---   function()
+---     local function_name = MiniSurround.user_input('Function name')
+---     return { left = function_name .. '(', right = ')' }
+---   end
+--- <
 ---@tag MiniSurround-surround-specification
 
 --- Count with actions
@@ -436,7 +472,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniSurround.config|.
 ---
----@usage `require('mini.surround').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.surround').setup() -- use default config
+---   -- OR
+---   require('mini.surround').setup({}) -- replace {} with your config table
+--- <
 MiniSurround.setup = function(config)
   -- Export module
   _G.MiniSurround = MiniSurround
@@ -459,8 +499,8 @@ end
 --- # Setup similar to 'tpope/vim-surround' ~
 ---
 --- This module is primarily designed after 'machakann/vim-sandwich'. To get
---- behavior closest to 'tpope/vim-surround' (but not identical), use this setup:
---- >
+--- behavior closest to 'tpope/vim-surround' (but not identical), use this setup: >lua
+---
 ---   require('mini.surround').setup({
 ---     mappings = {
 ---       add = 'ys',
@@ -487,6 +527,17 @@ end
 --- <
 --- # Options ~
 ---
+--- ## Mappings ~
+---
+--- `config.mappings` defines what mappings are set up for particular actions.
+--- By default it uses "prefix style" left hand side starting with "s" (for
+--- "surround"): `sa` - "surround add", `sd` - "surround delete", etc.
+---
+--- Note: if 'timeoutlen' is low enough to cause occasional usage of |s| key
+--- (that deletes character under cursor), disable it with the following call: >lua
+---
+---   vim.keymap.set({ 'n', 'x' }, 's', '<Nop>')
+--- <
 --- ## Custom surroundings ~
 ---
 --- User can define own surroundings by supplying `config.custom_surroundings`.
@@ -503,8 +554,8 @@ end
 ---   `nil` to stop any current surround operation.
 ---
 --- Examples of using `config.custom_surroundings` (see more examples at
---- |MiniSurround.gen_spec|):
---- >
+--- |MiniSurround.gen_spec|): >lua
+---
 ---   local surround = require('mini.surround')
 ---   surround.setup({
 ---     custom_surroundings = {
@@ -514,12 +565,12 @@ end
 ---       -- Use function to compute surrounding info
 ---       ['*'] = {
 ---         input = function()
----           local n_star = MiniSurround.user_input('Number of * to find: ')
+---           local n_star = MiniSurround.user_input('Number of * to find')
 ---           local many_star = string.rep('%*', tonumber(n_star) or 1)
 ---           return { many_star .. '().-()' .. many_star }
 ---         end,
 ---         output = function()
----           local n_star = MiniSurround.user_input('Number of * to output: ')
+---           local n_star = MiniSurround.user_input('Number of * to output')
 ---           local many_star = string.rep('*', tonumber(n_star) or 1)
 ---           return { left = many_star, right = many_star }
 ---         end,
@@ -527,8 +578,8 @@ end
 ---     },
 ---   })
 ---
----   -- Create custom surrounding for Lua's block string `[[...]]`. Use this inside
----   -- autocommand or 'after/ftplugin/lua.lua' file.
+---   -- Create custom surrounding for Lua's block string `[[...]]`
+---   -- Use this inside autocommand or 'after/ftplugin/lua.lua' file
 ---   vim.b.minisurround_config = {
 ---     custom_surroundings = {
 ---       s = {
@@ -564,9 +615,9 @@ end
 --- - Nearest match. Whichever is closest among previous and next matches.
 ---
 --- Possible values are:
---- - `'cover'` - use only covering match. Don't use either previous or
+--- - `'cover'` (default) - use only covering match. Don't use either previous or
 ---   next; report that there is no surrounding found.
---- - `'cover_or_next'` (default) - use covering match. If not found, use next.
+--- - `'cover_or_next'` - use covering match. If not found, use next.
 --- - `'cover_or_prev'` - use covering match. If not found, use previous.
 --- - `'cover_or_nearest'` - use covering match. If not found, use nearest.
 --- - `'next'` - use next match.
@@ -892,19 +943,8 @@ end
 --- Generate common surrounding specifications
 ---
 --- This is a table with two sets of generator functions: <input> and <output>
---- (currently empty). Each is a table with values being function generating
+--- (currently empty). Each is a table with function values generating
 --- corresponding surrounding specification.
----
---- Example: >
----   local ts_input = require('mini.surround').gen_spec.input.treesitter
----   require('mini.surround').setup({
----     custom_surroundings = {
----       -- Use tree-sitter to search for function call
----       f = {
----         input = ts_input({ outer = '@call.outer', inner = '@call.inner' })
----       },
----     }
----   })
 ---
 ---@seealso |MiniAi.gen_spec|
 MiniSurround.gen_spec = { input = {}, output = {} }
@@ -920,11 +960,12 @@ MiniSurround.gen_spec = { input = {}, output = {} }
 ---
 --- In order for this to work, apart from working treesitter parser for desired
 --- language, user should have a reachable language-specific 'textobjects'
---- query (see |get_query()|). The most straightforward way for this is to have
---- 'textobjects.scm' query file with treesitter captures stored in some
---- recognized path. This is primarily designed to be compatible with
---- 'nvim-treesitter/nvim-treesitter-textobjects' plugin, but can be used
---- without it.
+--- query (see |vim.treesitter.query.get()| or |get_query()|, depending on your
+--- Neovim version).
+--- The most straightforward way for this is to have 'textobjects.scm' query
+--- file with treesitter captures stored in some recognized path. This is
+--- primarily designed to be compatible with plugin
+--- 'nvim-treesitter/nvim-treesitter-textobjects', but can be used without it.
 ---
 --- Two most common approaches for having a query file:
 --- - Install 'nvim-treesitter/nvim-treesitter-textobjects'. It has curated and
@@ -933,21 +974,24 @@ MiniSurround.gen_spec = { input = {}, output = {} }
 --- - Manually create file 'after/queries/<language name>/textobjects.scm' in
 ---   your |$XDG_CONFIG_HOME| directory. It should contain queries with
 ---   captures (later used to define surrounding parts). See |lua-treesitter-query|.
---- To verify that query file is reachable, run (example for "lua" language)
---- `:lua print(vim.inspect(vim.treesitter.query.get_files('lua', 'textobjects')))`
---- (output should have at least an intended file).
+--- To verify that query file is reachable, run (example for "lua" language,
+--- output should have at least an intended file): >vim
 ---
+---   :lua print(vim.inspect(vim.treesitter.query.get_files('lua','textobjects')))
+--- <
 --- Example configuration for function definition textobject with
---- 'nvim-treesitter/nvim-treesitter-textobjects' captures:
---- >
+--- 'nvim-treesitter/nvim-treesitter-textobjects' captures: >lua
+---
 ---   local ts_input = require('mini.surround').gen_spec.input.treesitter
 ---   require('mini.surround').setup({
----     custom_textobjects = {
----       f = ts_input({ outer = '@call.outer', inner = '@call.inner' }),
+---     custom_surroundings = {
+---       -- Use tree-sitter to search for function call
+---       f = {
+---         input = ts_input({ outer = '@call.outer', inner = '@call.inner' })
+---       },
 ---     }
 ---   })
---- >
----
+--- <
 --- Notes:
 --- - By default query is done using 'nvim-treesitter' plugin if it is present
 ---   (falls back to builtin methods otherwise). This allows for a more
@@ -984,7 +1028,7 @@ MiniSurround.gen_spec.input.treesitter = function(captures, opts)
 
   return function()
     -- Get array of matched treesitter nodes
-    local has_nvim_treesitter, _ = pcall(require, 'nvim-treesitter')
+    local has_nvim_treesitter = pcall(require, 'nvim-treesitter') and pcall(require, 'nvim-treesitter.query')
     local node_pair_querier = (has_nvim_treesitter and opts.use_nvim_treesitter) and H.get_matched_node_pairs_plugin
       or H.get_matched_node_pairs_builtin
     local matched_node_pairs = node_pair_querier(captures)
@@ -1070,7 +1114,7 @@ H.builtin_surroundings = {
   ['t'] = {
     input = { '<(%w-)%f[^<%w][^<>]->.-</%1>', '^<.->().*()</[^/]->$' },
     output = function()
-      local tag_full = MiniSurround.user_input('Tag name')
+      local tag_full = MiniSurround.user_input('Tag')
       if tag_full == nil then return nil end
       local tag_name = tag_full:match('^%S*')
       return { left = '<' .. tag_full .. '>', right = '</' .. tag_name .. '>' }
@@ -1254,8 +1298,7 @@ H.get_surround_spec = function(sur_type, use_cache)
   -- confused with list of patterns.
   if H.is_composed_pattern(res) then res = vim.tbl_map(H.wrap_callable_table, res) end
 
-  -- Track identifier for possible messages. Use metatable to pass
-  -- `vim.tbl_islist()` check.
+  -- Track id for possible messages. Use metatable to pass "islist" check.
   res = setmetatable(res, { __index = { id = char } })
 
   -- Cache result
@@ -1312,7 +1355,7 @@ H.is_region_pair = function(x)
 end
 
 H.is_region_pair_array = function(x)
-  if not vim.tbl_islist(x) then return false end
+  if not H.islist(x) then return false end
   for _, v in ipairs(x) do
     if not H.is_region_pair(v) then return false end
   end
@@ -1320,7 +1363,7 @@ H.is_region_pair_array = function(x)
 end
 
 H.is_composed_pattern = function(x)
-  if not (vim.tbl_islist(x) and #x > 0) then return false end
+  if not (H.islist(x) and #x > 0) then return false end
   for _, val in ipairs(x) do
     local val_type = type(val)
     if not (val_type == 'table' or val_type == 'string' or vim.is_callable(val)) then return false end
@@ -1450,7 +1493,6 @@ H.prepare_captures = function(captures)
 end
 
 H.get_matched_node_pairs_plugin = function(captures)
-  -- Hope that 'nvim-treesitter.query' is stable enough
   local ts_queries = require('nvim-treesitter.query')
   local ts_parsers = require('nvim-treesitter.parsers')
 
@@ -1489,7 +1531,8 @@ H.get_matched_node_pairs_builtin = function(captures)
   local ok, parser = pcall(vim.treesitter.get_parser, 0, lang)
   if not ok then H.error_treesitter('parser', lang) end
 
-  local query = vim.treesitter.get_query(lang, 'textobjects')
+  local get_query = vim.fn.has('nvim-0.9') == 1 and vim.treesitter.query.get or vim.treesitter.get_query
+  local query = get_query(lang, 'textobjects')
   if query == nil then H.error_treesitter('query', lang) end
 
   -- Remove leading '@'
@@ -1794,9 +1837,8 @@ H.get_marks_pos = function(mode)
     local _, line1_indent = vim.fn.getline(pos1[1]):find('^%s*')
     pos1[2] = line1_indent
 
-    -- Move end mark to the last character (` - 2` here because `col()` returns
-    -- column right after the last 1-based column)
-    pos2[2] = vim.fn.col({ pos2[1], '$' }) - 2
+    -- Move end mark to the last non-whitespace character
+    pos2[2] = vim.fn.getline(pos2[1]):find('%s*$') - 2
   end
 
   -- Make columns 1-based instead of 0-based. This is needed because
@@ -2204,7 +2246,7 @@ end
 ---@private
 H.cartesian_product = function(arr)
   if not (type(arr) == 'table' and #arr > 0) then return {} end
-  arr = vim.tbl_map(function(x) return vim.tbl_islist(x) and x or { x } end, arr)
+  arr = vim.tbl_map(function(x) return H.islist(x) and x or { x } end, arr)
 
   local res, cur_item = {}, {}
   local process
@@ -2213,7 +2255,7 @@ H.cartesian_product = function(arr)
       table.insert(cur_item, arr[level][i])
       if level == #arr then
         -- Flatten array to allow tables as elements of step tables
-        table.insert(res, vim.tbl_flatten(cur_item))
+        table.insert(res, H.tbl_flatten(cur_item))
       else
         process(level + 1)
       end
@@ -2229,5 +2271,10 @@ H.wrap_callable_table = function(x)
   if vim.is_callable(x) and type(x) == 'table' then return function(...) return x(...) end end
   return x
 end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
+H.tbl_flatten = vim.fn.has('nvim-0.10') == 1 and function(x) return vim.iter(x):flatten(math.huge):totable() end
+  or vim.tbl_flatten
 
 return MiniSurround

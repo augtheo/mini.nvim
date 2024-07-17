@@ -68,7 +68,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniJump.config|.
 ---
----@usage `require('mini.jump').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.jump').setup() -- use default config
+---   -- OR
+---   require('mini.jump').setup({}) -- replace {} with your config table
+--- <
 MiniJump.setup = function(config)
   -- Export module
   _G.MiniJump = MiniJump
@@ -168,8 +172,7 @@ MiniJump.jump = function(target, backward, till, n_times)
 
   -- Determine if target is present anywhere in order to correctly enter
   -- jumping mode. If not, jumping mode is not possible.
-  local escaped_target = vim.fn.escape(MiniJump.state.target, [[\]])
-  local search_pattern = ([[\V%s]]):format(escaped_target)
+  local search_pattern = [[\V]] .. vim.fn.escape(MiniJump.state.target, [[\]])
   local target_is_present = vim.fn.search(search_pattern, 'wn') ~= 0
   if not target_is_present then return end
 
@@ -192,6 +195,7 @@ MiniJump.jump = function(target, backward, till, n_times)
 
   -- Make jump(s)
   H.cache.n_cursor_moved = 0
+  local init_cursor_data = H.get_cursor_data()
   MiniJump.state.jumping = true
   for _ = 1, MiniJump.state.n_times do
     vim.fn.search(pattern, flags)
@@ -202,6 +206,7 @@ MiniJump.jump = function(target, backward, till, n_times)
 
   -- Track cursor position to account for movement not caught by `CursorMoved`
   H.cache.latest_cursor = H.get_cursor_data()
+  H.cache.has_changed_cursor = not vim.deep_equal(H.cache.latest_cursor, init_cursor_data)
 end
 
 --- Make smart jump
@@ -364,6 +369,10 @@ H.make_expr_jump = function(backward, till)
     if target == nil then return '<Esc>' end
     H.update_state(target, backward, till, vim.v.count1)
 
+    vim.schedule(function()
+      if H.cache.has_changed_cursor then return end
+      vim.cmd('undo!')
+    end)
     return 'v<Cmd>lua MiniJump.jump()<CR>'
   end
 end

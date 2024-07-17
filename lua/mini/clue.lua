@@ -43,8 +43,8 @@
 --- Notes:
 --- - Works on all supported versions but using Neovim>=0.9 is recommended.
 ---
---- - There is no functionality to create mappings in order to clearly separate
----   two different tasks.
+--- - There is no functionality to create mappings while defining clues.
+---   This is done to clearly separate these two different actions.
 ---   The best suggested practice is to manually create mappings with
 ---   descriptions (`desc` field in options), as they will be automatically
 ---   used inside clue window.
@@ -72,7 +72,7 @@
 ---       Mapping for trigger should be the first listed.
 ---
 ---       This module makes the best effort to work out of the box and cover
----       most common cases, but it is not full proof. The solution here is to
+---       most common cases, but it is not foolproof. The solution here is to
 ---       ensure that triggers are created after making all buffer-local mappings:
 ---       run either |MiniClue.setup()| or |MiniClue.ensure_buf_triggers()|.
 ---
@@ -81,7 +81,7 @@
 ---   relevant as possible. To add/customize description of an already existing
 ---   mapping, use |MiniClue.set_mapping_desc()|.
 ---
---- - Due to technical difficulties, there is no full proof support for
+--- - Due to technical difficulties, there is no foolproof support for
 ---   Operator-pending mode triggers (like `a`/`i` from |mini.ai|):
 ---     - Doesn't work as part of a command in "temporary Normal mode" (like
 ---       after |i_CTRL-O|) due to implementation difficulties.
@@ -166,7 +166,7 @@
 ---
 --- This process is primarily designed for nested `<Leader>` mappings in Normal
 --- mode but works in all other main modes: Visual, Insert, Operator-pending
---- (with caveats; no full proof guarantees), Command-line, Terminal.
+--- (with caveats; no foolproof guarantees), Command-line, Terminal.
 ---
 --- ## Lifecycle ~
 ---
@@ -192,6 +192,7 @@
 ---         - If a key for scrolling clue window (`scroll_down` / `scroll_up`
 ---           in `config.window`; `<C-d>` / `<C-u>` by default), scroll clue window
 ---           and wait for the next user key.
+---           Note: if clue window is not shown, treated as a not special key.
 ---
 ---     - Not special key. Add key to the query while filtering all available
 ---       key combinations to start with the current key query. Advance:
@@ -232,7 +233,7 @@
 --- # Full starter example ~
 ---
 --- If not sure where to start, try this example with all provided clues from
---- this module plus all |<Leader>| mappings in Normal and Visual modes: >
+--- this module plus all |<Leader>| mappings in Normal and Visual modes: >lua
 ---
 ---   local miniclue = require('mini.clue')
 ---   miniclue.setup({
@@ -278,10 +279,10 @@
 ---       miniclue.gen_clues.z(),
 ---     },
 ---   })
----
+--- <
 --- # Leader clues ~
 ---
---- Assume there are these |<Leader>| mappings set up: >
+--- Assume there are these |<Leader>| mappings set up: >lua
 ---
 ---   -- Set `<Leader>` before making any mappings and configuring 'mini.clue'
 ---   vim.g.mapleader = ' '
@@ -300,10 +301,9 @@
 ---   xmap_leader('lf', '<Cmd>lua vim.lsp.buf.format()<CR>',     'Format')
 ---   nmap_leader('lr', '<Cmd>lua vim.lsp.buf.rename()<CR>',     'Rename')
 ---   nmap_leader('lR', '<Cmd>lua vim.lsp.buf.references()<CR>', 'References')
----
----
+--- <
 --- The following setup will enable |<Leader>| as trigger in Normal and Visual
---- modes and add descriptions to mapping groups: >
+--- modes and add descriptions to mapping groups: >lua
 ---
 ---   require('mini.clue').setup({
 ---     -- Register `<Leader>` as trigger
@@ -318,13 +318,13 @@
 ---       { mode = 'n', keys = '<Leader>l', desc = '+LSP' },
 ---     },
 ---   })
----
+--- <
 --- # Clues without mappings ~
 ---
 --- Clues can be shown not only for actually present mappings. This is helpful for
 --- showing clues for built-in key combinations. Here is an example of clues for
 --- a subset of built-in completion (see |MiniClue.gen_clues.builtin_completion()|
---- to generate clues for all available completion sources): >
+--- to generate clues for all available completion sources): >lua
 ---
 ---   require('mini.clue').setup({
 ---     -- Make `<C-x>` a trigger. Otherwise, key query process won't start.
@@ -367,7 +367,7 @@
 ---     - Press any of `h`/`j`/`k`/`l` to move selection/line.
 ---     - Press `<Esc>` to stop submode.
 ---
----   The code: >
+---   The code: >lua
 ---
 ---   require('mini.move').setup({
 ---     mappings = {
@@ -398,13 +398,13 @@
 ---       { mode = 'x', keys = '<Leader>ml', postkeys = '<Leader>m' },
 ---     },
 ---   })
----
+--- <
 --- - Submode for iterating buffers and windows with |mini.bracketed|:
 ---     - Press `[` or `]` to start key query process for certain direction.
 ---     - Press `b` / `w` to iterate buffers/windows until reach target one.
 ---     - Press `<Esc>` to stop submode.
 ---
----   The code: >
+---   The code: >lua
 ---
 ---   require('mini.bracketed').setup()
 ---
@@ -421,13 +421,13 @@
 ---       { mode = 'n', keys = '[w', postkeys = '[' },
 ---     },
 ---   })
----
+--- <
 --- - Submode for window commands using |MiniClue.gen_clues.windows()|:
 ---     - Press `<C-w>` to start key query process.
 ---     - Press keys which move / change focus / resize windows.
 ---     - Press `<Esc>` to stop submode.
 ---
----   The code: >
+---   The code: >lua
 ---
 ---   local miniclue = require('mini.clue')
 ---   miniclue.setup({
@@ -442,9 +442,9 @@
 ---       })
 ---     },
 ---   })
----
+--- <
 --- # Window config ~
---- >
+--- >lua
 ---   require('mini.clue').setup({
 ---     triggers = { { mode = 'n', keys = '<Leader>' } },
 ---
@@ -461,6 +461,7 @@
 ---       },
 ---     },
 ---   })
+--- <
 ---@tag MiniClue-examples
 
 ---@diagnostic disable:undefined-field
@@ -476,8 +477,10 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniClue.config|.
 ---
----@usage `require('mini.clue').setup({})` (replace `{}` with your `config` table).
---- **Needs to have triggers configured**.
+---@usage >lua
+---   require('mini.clue').setup({}) -- replace {} with your config table
+---                                  -- needs `triggers` field present
+--- <
 MiniClue.setup = function(config)
   -- Export module
   _G.MiniClue = MiniClue
@@ -555,7 +558,7 @@ end
 ---   computed automatically based on its content. Default is fixed width of 30.
 --- - <row> and <col> can be equal to `"auto"` in which case they will be
 ---   computed to "stick" to set anchor ("SE" by default; see |nvim_open_win()|).
----   This allows changing corner in which window is shown: >
+---   This allows changing corner in which window is shown: >lua
 ---
 ---   -- Pick one anchor
 ---   local anchor = 'NW' -- top-left
@@ -568,7 +571,7 @@ end
 ---       config = { anchor = anchor, row = 'auto', col = 'auto' },
 ---     },
 ---   })
----
+--- <
 --- `config.window.scroll_down` / `config.window.scroll_up` are strings defining
 --- keys which will scroll clue window down / up which is useful in case not
 --- all clues fit in current window height. Set to empty string `''` to disable
@@ -648,14 +651,11 @@ end
 --- Notes:
 --- - Uses buffer-local mapping in case there are both global and buffer-local
 ---   mappings with same mode and LHS. Similar to |maparg()|.
---- - Requires Neovim>=0.8.
 ---
 ---@param mode string Mapping mode (as in `maparg()`).
 ---@param lhs string Mapping left hand side (as `name` in `maparg()`).
 ---@param desc string New description to set.
 MiniClue.set_mapping_desc = function(mode, lhs, desc)
-  if vim.fn.has('nvim-0.8') == 0 then H.error('`set_mapping_desc()` requires Neovim>=0.8.') end
-
   if type(mode) ~= 'string' then H.error('`mode` should be string.') end
   if type(lhs) ~= 'string' then H.error('`lhs` should be string.') end
   if type(desc) ~= 'string' then H.error('`desc` should be string.') end
@@ -678,10 +678,10 @@ MiniClue.gen_clues = {}
 
 --- Generate clues for built-in completion
 ---
---- Contains clues for the following triggers: >
+--- Contains clues for the following triggers: >lua
 ---
 ---   { mode = 'i', keys = '<C-x>' }
----
+--- <
 ---@return table Array of clues.
 MiniClue.gen_clues.builtin_completion = function()
   --stylua: ignore
@@ -708,11 +708,11 @@ end
 
 --- Generate clues for `g` key
 ---
---- Contains clues for the following triggers: >
+--- Contains clues for the following triggers: >lua
 ---
 ---   { mode = 'n', keys = 'g' }
 ---   { mode = 'x', keys = 'g' }
----
+--- <
 ---@return table Array of clues.
 MiniClue.gen_clues.g = function()
   --stylua: ignore
@@ -794,7 +794,7 @@ end
 
 --- Generate clues for marks
 ---
---- Contains clues for the following triggers: >
+--- Contains clues for the following triggers: >lua
 ---
 ---   { mode = 'n', keys = "'" }
 ---   { mode = 'n', keys = "g'" }
@@ -804,7 +804,7 @@ end
 ---   { mode = 'x', keys = "g'" }
 ---   { mode = 'x', keys = '`' }
 ---   { mode = 'x', keys = 'g`' }
----
+--- <
 --- Note: if you use "g" as trigger (like to enable |MiniClue.gen_clues.g()|),
 --- don't add "g'" and "g`" as triggers: they already will be taken into account.
 ---
@@ -850,13 +850,13 @@ end
 
 --- Generate clues for registers
 ---
---- Contains clues for the following triggers: >
+--- Contains clues for the following triggers: >lua
 ---
 ---   { mode = 'n', keys = '"' }
 ---   { mode = 'x', keys = '"' }
 ---   { mode = 'i', keys = '<C-r>' }
 ---   { mode = 'c', keys = '<C-r>' }
----
+--- <
 ---@param opts table|nil Options. Possible keys:
 ---   - <show_contents> `(boolean)` - whether to show contents of all possible
 ---     registers. If `false`, only description of special registers is shown.
@@ -925,10 +925,10 @@ end
 
 --- Generate clues for window commands
 ---
---- Contains clues for the following triggers: >
+--- Contains clues for the following triggers: >lua
 ---
 ---   { mode = 'n', keys = '<C-w>' }
----
+--- <
 --- Note: only non-duplicated commands are included. For full list see |CTRL-W|.
 ---
 ---@param opts table|nil Options. Possible keys:
@@ -1004,11 +1004,11 @@ end
 
 --- Generate clues for `z` key
 ---
---- Contains clues for the following triggers: >
+--- Contains clues for the following triggers: >lua
 ---
 ---   { mode = 'n', keys = 'z' }
 ---   { mode = 'x', keys = 'z' }
----
+--- <
 ---@return table Array of clues.
 MiniClue.gen_clues.z = function()
   --stylua: ignore
@@ -1113,8 +1113,8 @@ H.timers = {
   getcharstr = vim.loop.new_timer(),
 }
 
--- Undo command which depends on Neovim version
-H.undo_autocommand = 'au ModeChanged * ++once undo' .. (vim.fn.has('nvim-0.8') == 1 and '!' or '')
+-- Undo autocommand to be created for several operator tweaks
+H.undo_autocommand = 'au ModeChanged * ++once undo!'
 
 -- Helper functionality =======================================================
 -- Settings -------------------------------------------------------------------
@@ -1186,7 +1186,7 @@ H.create_autocommands = function(config)
     MiniClue.ensure_buf_triggers(data.buf)
   end)
   -- - Respect `LspAttach` as it is a common source of buffer-local mappings
-  local events = vim.fn.has('nvim-0.8') == 1 and { 'BufAdd', 'LspAttach' } or { 'BufAdd' }
+  local events = { 'BufAdd', 'LspAttach' }
   au(events, '*', ensure_triggers, 'Ensure buffer-local trigger keymaps')
 
   -- Disable all triggers when recording macro as they interfere with what is
@@ -1288,11 +1288,7 @@ end
 
 H.unmap_trigger = function(buf_id, trigger)
   if not H.is_valid_buf(buf_id) then return end
-
-  trigger.keys = H.replace_termcodes(trigger.keys)
-
-  -- Delete mapping
-  pcall(vim.keymap.del, trigger.mode, trigger.keys, { buffer = buf_id })
+  pcall(vim.keymap.del, trigger.mode, H.keytrans(trigger.keys), { buffer = buf_id })
 end
 
 -- State ----------------------------------------------------------------------
@@ -1319,10 +1315,11 @@ H.state_advance = function(opts)
 
   if key == H.keys.cr then return H.state_exec() end
 
+  local is_window_shown = H.is_valid_win(H.state.win_id)
   local is_scroll_down = key == H.replace_termcodes(config_window.scroll_down)
   local is_scroll_up = key == H.replace_termcodes(config_window.scroll_up)
-  if is_scroll_down or is_scroll_up then
-    H.window_scroll(is_scroll_down and H.keys.ctrl_d or H.keys.ctrl_u)
+  if is_window_shown and (is_scroll_down or is_scroll_up) then
+    H.window_scroll(is_scroll_down)
     return H.state_advance({ same_content = true })
   end
 
@@ -1544,8 +1541,16 @@ H.window_update = vim.schedule_wrap(function(same_content)
   vim.cmd('redraw')
 end)
 
-H.window_scroll = function(scroll_key)
-  pcall(vim.api.nvim_win_call, H.state.win_id, function() vim.cmd('normal! ' .. scroll_key) end)
+H.window_scroll = function(is_scroll_down)
+  local scroll_key = is_scroll_down and H.keys.ctrl_d or H.keys.ctrl_u
+  local f = function()
+    local cache_scroll, bot_line, n_lines = vim.wo.scroll, vim.fn.line('w$'), vim.api.nvim_buf_line_count(0)
+    -- Do not scroll past the end of buffer
+    local scroll_count = is_scroll_down and math.min(cache_scroll, n_lines - bot_line) or cache_scroll
+    if scroll_count > 0 then pcall(vim.cmd, 'normal! ' .. scroll_count .. scroll_key) end
+    vim.wo.scroll = cache_scroll
+  end
+  vim.api.nvim_win_call(H.state.win_id, f)
 end
 
 H.window_open = function(config)
@@ -1556,8 +1561,7 @@ H.window_open = function(config)
   vim.wo[win_id].list = true
   vim.wo[win_id].listchars = 'extends:…'
 
-  -- Neovim=0.7 doesn't support invalid highlight groups in 'winhighlight'
-  local win_hl = 'FloatBorder:MiniClueBorder' .. (vim.fn.has('nvim-0.8') == 1 and ',FloatTitle:MiniClueTitle' or '')
+  local win_hl = 'FloatBorder:MiniClueBorder,FloatTitle:MiniClueTitle'
   vim.wo[win_id].winhighlight = win_hl
 
   return win_id
@@ -1712,7 +1716,7 @@ H.clues_normalize = function(clues)
   process = function(x)
     x = H.expand_callable(x)
     if H.is_clue(x) then return table.insert(res, x) end
-    if not vim.tbl_islist(x) then return nil end
+    if not H.islist(x) then return nil end
     for _, y in ipairs(x) do
       process(y)
     end
@@ -1853,7 +1857,7 @@ H.is_clue = function(x)
 end
 
 H.is_array_of = function(x, predicate)
-  if not vim.tbl_islist(x) then return false end
+  if not H.islist(x) then return false end
   for _, v in ipairs(x) do
     if not predicate(v) then return false end
   end
@@ -1876,17 +1880,9 @@ H.replace_termcodes = function(x)
   return vim.api.nvim_replace_termcodes(H.keytrans(x), true, true, true)
 end
 
--- TODO: Remove after compatibility with Neovim=0.7 is dropped
-if vim.fn.has('nvim-0.8') == 1 then
-  H.keytrans = function(x)
-    local res = vim.fn.keytrans(x):gsub('<lt>', '<')
-    return res
-  end
-else
-  H.keytrans = function(x)
-    local res = x:gsub('<lt>', '<')
-    return res
-  end
+H.keytrans = function(x)
+  local res = vim.fn.keytrans(x):gsub('<lt>', '<')
+  return res
 end
 
 H.get_forced_submode = function()
@@ -1974,5 +1970,8 @@ H.list_concat = function(...)
   end
   return res
 end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
 
 return MiniClue

@@ -19,7 +19,7 @@ local type_keys = function(...) return child.type_keys(...) end
 --stylua: ignore end
 
 -- Make helpers
-local is_starter_shown = function() return child.api.nvim_buf_get_option(0, 'filetype') == 'starter' end
+local is_starter_shown = function() return child.api.nvim_buf_get_option(0, 'filetype') == 'ministarter' end
 
 local validate_starter_shown = function() eq(is_starter_shown(), true) end
 
@@ -287,6 +287,12 @@ T['open()']['creates unique buffer names'] = function()
   child.lua('MiniStarter.close()')
   child.lua('MiniStarter.open()')
   eq(vim.fn.fnamemodify(child.api.nvim_buf_get_name(0), ':t'), 'Starter_2')
+
+  -- Should not duplicate existing buffer name
+  local buf_id = child.api.nvim_create_buf(true, false)
+  child.api.nvim_buf_set_name(buf_id, child.fn.getcwd() .. '/Starter_3')
+  child.lua('MiniStarter.open()')
+  eq(child.api.nvim_buf_get_name(0), 'ministarter://3')
 end
 
 T['open()']['respects `vim.{g,b}.ministarter_disable`'] = new_set({
@@ -1095,26 +1101,35 @@ T['Autoopening']['works'] = function()
 
   -- It should result into total single buffer
   eq(#child.api.nvim_list_bufs(), 1)
+
+  -- It should trigger `MiniStarterOpened` `User` event
+  eq(child.lua_get('_G.n_event'), 1)
 end
 
 T['Autoopening']['does not autoopen if Neovim started to show something'] = function()
   local init_autoopen = 'tests/dir-starter/init-files/test-init.lua'
+  local validate = function(...)
+    child.restart({ '-u', init_autoopen, ... })
+    validate_starter_not_shown()
+    eq(child.lua_get('_G.n_event'), 0)
+  end
 
-  -- Current buffer has any lines (something opened explicitly)
-  child.restart({ '-u', init_autoopen, '-c', [[call setline(1, 'a')]] })
-  validate_starter_not_shown()
+  -- There are files in arguments (like `nvim foo.txt` with new file).
+  validate('new-file.txt')
 
   -- Several buffers are listed (like session with placeholder buffers)
-  child.restart({ '-u', init_autoopen, '-c', 'e foo | set buflisted | e bar | set buflisted' })
-  validate_starter_not_shown()
+  validate('-c', 'e foo | set buflisted | e bar | set buflisted')
 
   -- Unlisted buffers (like from `nvim-tree`) don't affect decision
   child.restart({ '-u', init_autoopen, '-c', 'e foo | set nobuflisted | e bar | set buflisted' })
   validate_starter_shown()
+  eq(child.lua_get('_G.n_event'), 1)
 
-  -- There are files in arguments (like `nvim foo.txt` with new file).
-  child.restart({ '-u', init_autoopen, 'new-file.txt' })
-  validate_starter_not_shown()
+  -- Current buffer is meant to show something else
+  validate('-c', 'set filetype=text')
+
+  -- Current buffer has any lines (something opened explicitly)
+  validate('-c', [[call setline(1, 'a')]])
 end
 
 T['Querying'] = new_set()
@@ -1185,8 +1200,6 @@ T['Querying']['respects `config.evaluate_single`'] = function()
 end
 
 T['Querying']['works with `cmdheight=0`'] = function()
-  if child.fn.has('nvim-0.8') == 0 then return end
-
   child.set_size(20, 50)
   child.o.cmdheight = 0
   reload_module({ items = example_items })
@@ -1419,7 +1432,7 @@ T['Multiple buffers']['are allowed'] = function()
   eq(vim.fn.fnamemodify(child.api.nvim_buf_get_name(0), ':t'), 'Starter_2')
 
   eq(child.api.nvim_buf_is_valid(buf_id_1), true)
-  eq(child.api.nvim_buf_get_option(buf_id_1, 'filetype'), 'starter')
+  eq(child.api.nvim_buf_get_option(buf_id_1, 'filetype'), 'ministarter')
   eq(get_active_items_names(), { 'aaab', 'aaba', 'abaa', 'baaa' })
 
   -- State of first Starter buffer should not be affected by second one

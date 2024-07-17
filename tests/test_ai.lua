@@ -786,7 +786,12 @@ T['gen_spec']['treesitter()']['validates builtin treesitter presence'] = functio
   mock_treesitter_builtin()
 
   -- Query
-  child.lua('vim.treesitter.get_query = function() return nil end')
+  local lua_cmd = string.format(
+    'vim.treesitter.%s = function() return nil end',
+    child.fn.has('nvim-0.9') == 1 and 'query.get' or 'get_query'
+  )
+  child.lua(lua_cmd)
+
   expect.error(
     function() child.lua([[MiniAi.find_textobject('a', 'F')]]) end,
     vim.pesc([[(mini.ai) Can not get query for buffer 1 and language 'lua'.]])
@@ -1408,6 +1413,28 @@ T['Textobject']['works in Operator-pending mode'] = function()
   validate_edit(lines, cursor, { 'aabb', 'ccc', 'ddee' }, { 1, 2 }, 'd<C-v>a)')
 end
 
+T['Textobject']['can be cancelled'] = function()
+  local validate = function(keys, mode)
+    set_lines({ 'aaa' })
+    set_cursor(1, 1)
+    type_keys(keys, '<Esc>')
+
+    eq(child.api.nvim_get_mode().mode, mode)
+    type_keys('<Esc>')
+
+    eq(get_lines(), { 'aaa' })
+    eq(get_cursor(), { 1, 1 })
+
+    child.ensure_normal_mode()
+  end
+
+  -- Visual mode should be cancelled without leaving Visual mode
+  validate({ 'v', 'i' }, 'v')
+
+  -- Operator-pending mode should be cancelled into Normal mode
+  validate({ 'd', 'i' }, 'n')
+end
+
 T['Textobject']['works with different mappings'] = function()
   reload_module({ mappings = { around = 'A', inside = 'I' } })
 
@@ -1487,8 +1514,7 @@ T['Textobject']['falls back in case of absent textobject id'] = function()
   end
 
   -- Builtin textobject
-  -- TODO: Remove when support for Neovim=0.7 is dropped
-  local pattern = child.fn.has('nvim-0.8') == 0 and 'Lua' or 'mini.*ai'
+  local pattern = 'mini.*ai'
   -- Visual mode
   expect.match(child.fn.maparg('a', 'x'), pattern)
   validate('aaa bbb', 0, { 'a', 'w' }, { 1, 4 })
@@ -1737,6 +1763,7 @@ T['Textobject']['respects `vim.{g,b}.miniai_disable`'] = new_set({
 
 T['Textobject']['respects `config.silent`'] = function()
   child.set_size(5, 40)
+  child.o.showcmd = false
   child.lua('MiniAi.config.silent = true')
 
   child.o.timeoutlen = 50
@@ -1949,6 +1976,8 @@ T['Motion']['works with multibyte characters'] = function()
   validate_motion1d(' (ыыы) ', 0, 'g[)', 1)
   validate_motion1d(' (ыыы) ', 0, 'g])', 8)
 end
+
+T['Motion']['works with special textobject id'] = function() validate_motion1d([[aa\bb\cc]], 4, [[g[\]], 3) end
 
 T['Motion']['respects `vim.{g,b}.miniai_disable`'] = new_set({
   parametrize = { { 'g' }, { 'b' } },
@@ -2767,11 +2796,11 @@ end
 T['Builtin']['Default'] = new_set()
 
 T['Builtin']['Default']['works'] = function()
-  -- Should allow only punctuation, digits, and whitespace
+  -- Should allow only punctuation, digits, space, or tab
   -- Should include only right edge
 
-  local sample_keys = { ',', '.', '_', '*', '-', '0', '1', ' ', '\t' }
-  for _, key in ipairs(sample_keys) do
+  local good_keys = { ',', '.', '_', '*', '-', '0', '1', ' ', '\t', '\\' }
+  for _, key in ipairs(good_keys) do
     -- Single line
     validate_tobj1d('a' .. key .. 'bb' .. key, 0, 'a' .. key, { 3, 5 })
     validate_tobj1d('a' .. key .. 'bb' .. key, 0, 'i' .. key, { 3, 4 })
@@ -2779,6 +2808,17 @@ T['Builtin']['Default']['works'] = function()
     -- Multiple lines
     validate_tobj({ key, 'aa', key }, { 2, 0 }, 'a' .. key, { { 1, 2 }, { 3, 1 } })
     validate_tobj({ key, 'aa', key }, { 2, 0 }, 'i' .. key, { { 1, 2 }, { 2, 3 } })
+  end
+
+  -- Should stop with message on bad keys
+  child.set_size(10, 80)
+  child.o.cmdheight = 5
+  local bad_keys = { '\n', '\r', '\1', child.api.nvim_replace_termcodes('<BS>', true, true, true) }
+  for _, key in ipairs(bad_keys) do
+    set_lines({ 'aaa' })
+    type_keys('d', 'a', key)
+    expect.match(child.cmd_capture('1messages'), 'alphanumeric, punctuation, space, or tab')
+    child.cmd('messages clear')
   end
 end
 
@@ -2831,6 +2871,13 @@ T['Builtin']['Default']['can not be covering'] = function()
   eq(get_mode(), 'n')
   eq(get_cursor(), { 1, 4 })
   expect.match(get_latest_message(), 'a_')
+end
+
+T['Builtin']['Default']['detects covering with smallest width'] = function()
+  validate_edit1d('_a_bb_', 2, '__bb_', 1, 'di_')
+  validate_edit1d('_aa_b_', 3, '_aa__', 4, 'di_')
+
+  validate_edit1d('_a_b_c_b_a_', 5, '_a_b__b_a_', 5, 'di_')
 end
 
 local set_custom_tobj = function(tbl) child.lua('MiniAi.config.custom_textobjects = ' .. vim.inspect(tbl)) end

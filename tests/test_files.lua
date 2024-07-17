@@ -175,6 +175,18 @@ local T = new_set({
       mock_win_functions()
       child.set_size(15, 80)
       load_module()
+
+      -- Mock `vim.notify()`
+      child.lua([[
+        _G.notify_log = {}
+        vim.notify = function(...) table.insert(_G.notify_log, { ... }) end
+      ]])
+
+      -- Make more robust screenshots
+      child.o.laststatus = 0
+      -- - Hide intro
+      child.cmd('vsplit')
+      child.cmd('quit')
     end,
     post_case = function() vim.fn.delete(make_test_path('data'), 'rf') end,
     post_once = child.stop,
@@ -333,23 +345,61 @@ T['open()']['handles problematic entry names'] = function()
   child.expect_screenshot()
 end
 
-T['open()']["uses 'nvim-web-devicons' if present"] = function()
-  -- Mock 'nvim-web-devicons'
+T['open()']['handles backslash on Unix'] = function()
+  if child.lua_get('vim.loop.os_uname().sysname') == 'Windows_NT' then MiniTest.skip('Test is not for Windows.') end
+
+  local temp_dir = make_temp_dir('temp', { '\\', 'hello\\', 'wo\\rld' })
+  open(temp_dir)
+  child.expect_screenshot()
+end
+
+T['open()']['handles undo just after open'] = function()
+  open(test_dir_path)
+  type_keys('u')
+  eq(#get_lines() > 1, true)
+  eq(child.cmd_capture('1messages'), 'Already at oldest change')
+end
+
+T['open()']['uses icon provider'] = function()
+  -- 'mini.icons'
+  child.lua('require("mini.icons").setup()')
+  open(make_test_path('real'))
+  --stylua: ignore
+  eq(get_extmarks_hl(), {
+    'MiniIconsAzure',  'MiniFilesFile',
+    'MiniIconsYellow', 'MiniFilesFile',
+    'MiniIconsAzure',  'MiniFilesFile',
+    'MiniIconsCyan',   'MiniFilesFile',
+    'MiniIconsGrey',   'MiniFilesFile',
+  })
+
+  go_out()
+  --stylua: ignore
+  eq(get_extmarks_hl(), {
+    'MiniIconsAzure', 'MiniFilesDirectory',
+    'MiniIconsAzure', 'MiniFilesDirectory',
+    'MiniIconsAzure', 'MiniFilesDirectory',
+    'MiniIconsAzure', 'MiniFilesDirectory',
+    'MiniIconsAzure', 'MiniFilesFile',
+    'MiniIconsAzure', 'MiniFilesFile',
+  })
+
+  child.expect_screenshot()
+  close()
+
+  -- Should still prefer 'mini.icons' if 'nvim-web-devicons' is available
+  -- - Mock 'nvim-web-devicons'
   child.cmd('set rtp+=tests/dir-files')
 
   open(make_test_path('real'))
   child.expect_screenshot()
-  --stylua: ignore
-  eq(
-    get_extmarks_hl(),
-    {
-      'DevIconLua',      'MiniFilesFile',
-      'DevIconTxt',      'MiniFilesFile',
-      'DevIconGif',      'MiniFilesFile',
-      'DevIconLicense',  'MiniFilesFile',
-      'DevIconMakefile', 'MiniFilesFile',
-    }
-  )
+  close()
+
+  -- Should fall back to 'nvim-web-devicons'
+  child.lua('_G.MiniIcons = nil')
+
+  open(make_test_path('real'))
+  child.expect_screenshot()
 end
 
 T['open()']['history'] = new_set()
@@ -775,6 +825,7 @@ T['open()']['properly closes currently opened explorer'] = function()
 end
 
 T['open()']['properly closes currently opened explorer with modified buffers'] = function()
+  child.cmd('au User MiniFilesExplorerClose lua _G.had_close_event = true')
   child.set_size(100, 100)
 
   local path_1, path_2 = make_test_path('common'), make_test_path('common/a-dir')
@@ -785,6 +836,9 @@ T['open()']['properly closes currently opened explorer with modified buffers'] =
   mock_confirm(1)
   open(path_2)
   validate_confirm_args('modified buffer.*close without sync')
+
+  -- Should trigger proper event for closing explorer
+  eq(child.lua_get('_G.had_close_event'), true)
 end
 
 T['open()']['tracks lost focus'] = function()
@@ -1072,6 +1126,7 @@ T['close()']['works per tabpage'] = function()
 end
 
 T['close()']['checks for modified buffers'] = function()
+  child.cmd('au User MiniFilesExplorerClose lua _G.had_close_event = true')
   open(test_dir_path)
   type_keys('o', 'new', '<Esc>')
   child.expect_screenshot()
@@ -1081,6 +1136,9 @@ T['close()']['checks for modified buffers'] = function()
   eq(close(), false)
   child.expect_screenshot()
   validate_confirm_args('modified buffer.*Confirm close without sync')
+
+  -- - Should not trigger close event (as there was no closing)
+  eq(child.lua_get('_G.had_close_event'), vim.NIL)
 
   -- Should close if there is confirm
   mock_confirm(1)
@@ -1117,14 +1175,17 @@ T['close()']['handles invalid target window'] = function()
   child.o.showtabline = 0
   child.o.laststatus = 0
 
-  child.cmd('tabfind ' .. test_dir_path)
+  child.cmd('wincmd v')
+  local target_win_id = child.api.nvim_get_current_win()
+  open(test_dir_path)
   child.expect_screenshot()
-  eq(#child.api.nvim_list_tabpages(), 2)
+  eq(#child.api.nvim_list_wins(), 3)
 
+  child.api.nvim_win_close(target_win_id, true)
   close()
   child.expect_screenshot()
   eq(#child.api.nvim_list_bufs(), 1)
-  eq(#child.api.nvim_list_tabpages(), 1)
+  eq(#child.api.nvim_list_wins(), 1)
   eq(child.cmd('messages'), '')
 end
 
@@ -1758,10 +1819,6 @@ end
 
 T['Windows']['uses correct UI highlight groups'] = function()
   local validate_winhl_match = function(win_id, from_hl, to_hl)
-    -- Setting non-existing highlight group in 'winhighlight' is not supported
-    -- in Neovim=0.7
-    if child.fn.has('nvim-0.8') == 0 and from_hl == 'FloatTitle' then return end
-
     local winhl = child.api.nvim_win_get_option(win_id, 'winhighlight')
 
     -- Make sure entry is match in full
@@ -1833,7 +1890,6 @@ T['Windows']['can be closed manually'] = function()
 end
 
 T['Windows']['never shows past end of buffer'] = function()
-  if child.fn.has('nvim-0.10') == 0 then MiniTest.skip('Screenshots are generated for 0.10.') end
   mock_confirm(1)
 
   -- Modifying buffer in Insert mode
@@ -1859,12 +1915,16 @@ T['Windows']['never shows past end of buffer'] = function()
   child.expect_screenshot()
 end
 
-T['Preview'] = new_set()
+T['Preview'] = new_set({
+  hooks = {
+    pre_case = function()
+      child.lua('MiniFiles.config.windows.preview = true')
+      child.lua('MiniFiles.config.windows.width_focus = 25')
+    end,
+  },
+})
 
 T['Preview']['works for directories'] = function()
-  child.lua('MiniFiles.config.windows.preview = true')
-  child.lua('MiniFiles.config.windows.width_focus = 25')
-
   -- Should open preview right after `open()`
   open(test_dir_path)
   child.expect_screenshot()
@@ -1879,18 +1939,20 @@ T['Preview']['works for directories'] = function()
 end
 
 T['Preview']['works for files'] = function()
-  child.lua('MiniFiles.config.windows.preview = true')
-  child.lua('MiniFiles.config.windows.width_focus = 25')
+  local expect_screenshot = function()
+    -- Test only on Neovim>=0.10 because there was major tree-sitter update
+    if child.fn.has('nvim-0.10') == 1 then child.expect_screenshot() end
+  end
 
   open(make_test_path('real'))
 
   -- Should preview Lua file with highlighting
-  child.expect_screenshot()
+  expect_screenshot()
 
   -- Should preview text file (also with enabled highlighting but as there is
   -- none defined, non should be visible)
   type_keys('j')
-  child.expect_screenshot()
+  expect_screenshot()
 
   -- Should read only maximum necessary amount of lines
   local buffers = child.api.nvim_list_bufs()
@@ -1902,23 +1964,20 @@ T['Preview']['works for files'] = function()
 
   -- Should recognize binary files and show placeholder preview
   type_keys('j')
-  child.expect_screenshot()
+  expect_screenshot()
 
   -- Should work for empty files
   type_keys('j')
-  child.expect_screenshot()
+  expect_screenshot()
 
   -- Should fall back to built-in syntax highlighting in case of no tree-sitter
   type_keys('j')
-  child.expect_screenshot()
+  expect_screenshot()
 end
 
 T['Preview']['does not highlight big files'] = function()
   local big_file = make_test_path('big.lua')
   MiniTest.finally(function() child.fn.delete(big_file, 'rf') end)
-
-  child.lua('MiniFiles.config.windows.preview = true')
-  child.lua('MiniFiles.config.windows.width_focus = 25')
 
   -- Has limit per line
   child.fn.writefile({ string.format('local a = "%s"', string.rep('a', 1000)) }, big_file)
@@ -1931,7 +1990,6 @@ T['Preview']['does not highlight big files'] = function()
 end
 
 T['Preview']['is not removed when going out'] = function()
-  child.lua('MiniFiles.config.windows.preview = true')
   child.lua('MiniFiles.config.windows.width_focus = 15')
   child.lua('MiniFiles.config.windows.width_preview = 15')
 
@@ -1952,9 +2010,6 @@ T['Preview']['is not removed when going out'] = function()
 end
 
 T['Preview']['reuses buffers'] = function()
-  child.lua('MiniFiles.config.windows.preview = true')
-  child.lua('MiniFiles.config.windows.width_focus = 25')
-
   -- Show two previews (for directory and file) and hide them
   open(test_dir_path)
   type_keys('G')
@@ -1969,7 +2024,7 @@ T['Preview']['reuses buffers'] = function()
 end
 
 T['Preview']['is not shown if not enough space'] = function()
-  child.lua('MiniFiles.config.windows.preview = true')
+  child.lua('MiniFiles.config.windows.width_focus = 50')
   child.set_size(15, 60)
   open(test_dir_path)
   child.expect_screenshot()
@@ -1978,16 +2033,12 @@ end
 T['Preview']['previews only one level deep'] = function()
   child.set_size(10, 80)
 
-  child.lua('MiniFiles.config.windows.preview = true')
-  child.lua('MiniFiles.config.windows.width_focus = 25')
-
   open(make_test_path('nested'))
   child.expect_screenshot()
 end
 
 T['Preview']['handles user created lines'] = function()
-  child.lua('MiniFiles.config.windows.preview = true')
-
+  child.lua('MiniFiles.config.windows.width_focus = 50')
   open(test_dir_path)
   type_keys('o', 'new_entry', '<Esc>')
   type_keys('k')
@@ -2001,12 +2052,50 @@ end
 
 T['Preview']['works after `trim_left()`'] = function()
   child.set_size(10, 80)
-  child.lua('MiniFiles.config.windows.preview = true')
-  child.lua('MiniFiles.config.windows.width_focus = 25')
 
   open(make_test_path('nested'))
   go_in()
   trim_left()
+  type_keys('j')
+  child.expect_screenshot()
+end
+
+T['Preview']['does not result in flicker'] = function()
+  child.lua('MiniFiles.config.windows.width_focus = 50')
+  -- Exact width is important: it is just enough to fit focused (52) and two
+  -- non-focused (17+17) windows which was the computed visible range range
+  child.set_size(10, 86)
+  child.lua([[
+    _G.get_visible_bufs = function()
+      local res = {}
+      for _, win_id in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        table.insert(res, vim.api.nvim_win_get_buf(win_id))
+      end
+      table.sort(res)
+      return res
+    end
+  ]])
+
+  open(test_dir)
+  child.lua([[
+    MiniFiles.go_in()
+    MiniFiles.go_in()
+    _G.visible_bufs = _G.get_visible_bufs()
+  ]])
+
+  -- State shown initially should be the same as after some time has passed
+  sleep(10)
+  eq(child.lua_get('_G.visible_bufs'), child.lua_get('_G.get_visible_bufs()'))
+end
+
+T['Preview']['always updates with cursor'] = function()
+  child.lua('MiniFiles.config.windows.width_focus = 50')
+  -- Exact width is important: it is just enough to fit focused (52) and two
+  -- non-focused (17+17) windows which was the computed visible range range
+  child.set_size(10, 86)
+  open(test_dir)
+  go_in()
+  go_in()
   type_keys('j')
   child.expect_screenshot()
 end
@@ -2500,6 +2589,14 @@ T['File manipulation']['create does not override existing entry'] = function()
   validate_file(file_path)
   validate_file_content(file_path, { 'File' })
   validate_file(temp_dir, 'dir', 'subfile')
+
+  -- Should show warning
+  local warn_level = child.lua_get('vim.log.levels.WARN')
+  local ref_log = {
+    { '(mini.files) Can not create ' .. file_path .. '. Target path already exists.', warn_level },
+    { '(mini.files) Can not create ' .. temp_dir .. '/dir/. Target path already exists.', warn_level },
+  }
+  eq(child.lua_get('_G.notify_log'), ref_log)
 end
 
 T['File manipulation']['creates files in nested directories'] = function()
@@ -2587,7 +2684,7 @@ T['File manipulation']['can delete'] = function()
   child.expect_screenshot()
 
   validate_no_file(temp_dir, 'file')
-  validate_no_directory(temp_dir, 'emptry-dir')
+  validate_no_directory(temp_dir, 'empty-dir')
   validate_no_directory(temp_dir, 'dir')
 
   -- Validate separately because order is not guaranteed
@@ -2687,6 +2784,14 @@ T['File manipulation']['rename does not override existing entry'] = function()
   mock_confirm(1)
   synchronize()
   child.expect_screenshot()
+
+  -- Should show warning
+  local warn_level = child.lua_get('vim.log.levels.WARN')
+  local ref_log = {
+    { '(mini.files) Can not move or rename ' .. temp_dir .. '/dir. Target path already exists.', warn_level },
+    { '(mini.files) Can not move or rename ' .. temp_dir .. '/file. Target path already exists.', warn_level },
+  }
+  eq(child.lua_get('_G.notify_log'), ref_log)
 end
 
 T['File manipulation']['rename file renames opened buffers'] = function()
@@ -2744,6 +2849,36 @@ T['File manipulation']['renames even if lines are rearranged'] = function()
 
   validate_confirm_args([[RENAME: 'file%-2' to 'new%-file%-2']])
   validate_confirm_args([[RENAME: 'file%-1' to 'new%-file%-1']])
+end
+
+T['File manipulation']['rename works again after undo'] = function()
+  local temp_dir = make_temp_dir('temp', { 'file' })
+  open(temp_dir)
+
+  type_keys('C', 'file-new', '<Esc>')
+  child.expect_screenshot()
+
+  mock_confirm(1)
+  synchronize()
+
+  validate_no_file(temp_dir, 'file')
+  validate_file(temp_dir, 'file-new')
+
+  -- Validate confirmation messages
+  local ref_pattern = make_plain_pattern('CONFIRM FILE SYSTEM ACTIONS', short_path(temp_dir) .. ':')
+  validate_confirm_args(ref_pattern)
+  validate_confirm_args([[  RENAME: 'file' to 'file%-new']])
+
+  -- Undo and synchronize should cleanly rename back
+  type_keys('u', 'u')
+  child.expect_screenshot()
+
+  mock_confirm(1)
+  synchronize()
+
+  validate_confirm_args([[  RENAME: 'file%-new' to 'file']])
+  validate_file(temp_dir, 'file')
+  validate_no_file(temp_dir, 'file-new')
 end
 
 T['File manipulation']['can move file'] = function()
@@ -2820,6 +2955,14 @@ T['File manipulation']['move does not override existing entry'] = function()
   mock_confirm(1)
   synchronize()
   child.expect_screenshot()
+
+  -- Should show warning
+  local warn_level = child.lua_get('vim.log.levels.WARN')
+  local ref_log = {
+    { '(mini.files) Can not move or rename ' .. temp_dir .. '/dir. Target path already exists.', warn_level },
+    { '(mini.files) Can not move or rename ' .. temp_dir .. '/file. Target path already exists.', warn_level },
+  }
+  eq(child.lua_get('_G.notify_log'), ref_log)
 end
 
 T['File manipulation']['handles move directory inside itself'] = function()
@@ -2895,6 +3038,49 @@ T['File manipulation']['can move inside new directory'] = function()
   validate_no_file(temp_dir, 'file')
   validate_file(temp_dir, 'new-dir', 'new-subdir', 'file')
   validate_file_content(join_path(temp_dir, 'new-dir', 'new-subdir', 'file'), { 'File' })
+end
+
+T['File manipulation']['move works again after undo'] = function()
+  local temp_dir = make_temp_dir('temp', { 'file', 'dir/' })
+  open(temp_dir)
+
+  -- Perform manipulation
+  type_keys('G', 'dd')
+  go_in()
+  type_keys('V', 'P')
+  child.expect_screenshot()
+
+  mock_confirm(1)
+  synchronize()
+
+  validate_no_file(temp_dir, 'file')
+  validate_file(temp_dir, 'dir', 'file')
+
+  -- Validate confirmation messages
+  local ref_pattern = make_plain_pattern('CONFIRM FILE SYSTEM ACTIONS', short_path(temp_dir) .. ':')
+  validate_confirm_args(ref_pattern)
+
+  -- - Target path should be absolute but can with `~` for home directory
+  local target_path = short_path(temp_dir, 'dir', 'file')
+  local ref_pattern_2 = string.format([[    MOVE: 'file' to '%s']], vim.pesc(target_path))
+  validate_confirm_args(ref_pattern_2)
+
+  -- Undos and synchronize should cleanly move back
+  type_keys('u', 'u')
+  go_out()
+  type_keys('u', 'u')
+  -- - Highlighting is different on Neovim>=0.10
+  if child.fn.has('nvim-0.10') == 1 then child.expect_screenshot() end
+
+  mock_confirm(1)
+  synchronize()
+
+  validate_file(temp_dir, 'file')
+  validate_no_file(temp_dir, 'dir', 'file')
+
+  local target_path_2 = short_path(temp_dir, 'file')
+  local ref_pattern_3 = string.format([[    MOVE: 'file' to '%s']], vim.pesc(target_path_2))
+  validate_confirm_args(ref_pattern_3)
 end
 
 T['File manipulation']['can copy file'] = function()
@@ -3051,6 +3237,14 @@ T['File manipulation']['copy does not override existing entry'] = function()
   mock_confirm(1)
   synchronize()
   child.expect_screenshot()
+
+  -- Should show warning
+  local warn_level = child.lua_get('vim.log.levels.WARN')
+  local ref_log = {
+    { '(mini.files) Can not copy ' .. temp_dir .. '/dir. Target path already exists.', warn_level },
+    { '(mini.files) Can not copy ' .. temp_dir .. '/file. Target path already exists.', warn_level },
+  }
+  eq(child.lua_get('_G.notify_log'), ref_log)
 end
 
 T['File manipulation']['can copy directory inside itself'] = function()
@@ -3210,6 +3404,31 @@ T['File manipulation']['works with problematic names'] = function()
   validate_file(temp_dir, 'd file')
 end
 
+T['File manipulation']['handles backslash on Unix'] = function()
+  if child.lua_get('vim.loop.os_uname().sysname') == 'Windows_NT' then MiniTest.skip('Test is not for Windows.') end
+
+  local temp_dir = make_temp_dir('temp', { '\\', 'hello\\', 'wo\\rld' })
+  open(temp_dir)
+
+  -- Perform manipulation
+  -- - Delete
+  type_keys('dd')
+  -- - Rename
+  type_keys('C', 'new-hello', '<Esc>')
+  -- - Create
+  type_keys('o', 'bad\\file', '<Esc>')
+  if child.fn.has('nvim-0.10') == 1 then child.expect_screenshot() end
+
+  mock_confirm(1)
+  synchronize()
+  if child.fn.has('nvim-0.10') == 1 then child.expect_screenshot() end
+
+  validate_no_file(temp_dir, [[\]])
+  validate_no_file(temp_dir, [[hello\]])
+  validate_file(temp_dir, 'new-hello')
+  validate_file(temp_dir, [[bad\file]])
+end
+
 T['File manipulation']['ignores blank lines'] = function()
   open(test_dir_path)
   type_keys('o', '<Esc>', 'yy', 'p')
@@ -3350,17 +3569,50 @@ local clear_event_track = function() child.lua('_G.callback_args_data = {}') end
 local validate_event_track = function(ref, do_sort)
   local event_track = child.lua_get('_G.callback_args_data')
 
-  -- Neovim<0.8 doesn't have `data` field in event callback
-  if child.fn.has('nvim-0.8') == 0 then
-    eq(#event_track, #ref)
-    return
-  end
-
   if do_sort then table.sort(event_track, function(a, b) return a.buf_id < b.buf_id end) end
   eq(event_track, ref)
 end
 
 local validate_n_events = function(n_ref) eq(#child.lua_get('_G.callback_args_data'), n_ref) end
+
+T['Events']['`MiniFilesExplorerOpen` triggers'] = function()
+  track_event('MiniFilesExplorerOpen')
+  child.cmd('au User MiniFilesExplorerOpen lua _G.windows = vim.api.nvim_list_wins()')
+
+  open(test_dir_path)
+  validate_event_track({ {} })
+  -- Should trigger after all windows are opened
+  eq(#child.lua_get('_G.windows'), 2)
+  clear_event_track()
+
+  close()
+  validate_event_track({})
+
+  open(test_dir_path)
+  validate_event_track({ {} })
+end
+
+T['Events']['`MiniFilesExplorerClose` triggers'] = function()
+  track_event('MiniFilesExplorerClose')
+  child.cmd('au User MiniFilesExplorerClose lua _G.windows = vim.api.nvim_list_wins()')
+
+  open(test_dir_path)
+  validate_event_track({})
+  clear_event_track()
+
+  close()
+  validate_event_track({ {} })
+  -- Should trigger before all windows are closed
+  eq(#child.lua_get('_G.windows'), 2)
+  clear_event_track()
+
+  open(test_dir_path)
+  validate_event_track({})
+  clear_event_track()
+
+  close()
+  validate_event_track({ {} })
+end
 
 T['Events']['`MiniFilesBufferCreate` triggers'] = function()
   track_event('MiniFilesBufferCreate')
@@ -3400,8 +3652,6 @@ T['Events']['`MiniFilesBufferCreate` triggers inside preview'] = function()
 end
 
 T['Events']['`MiniFilesBufferCreate` can be used to create buffer-local mappings'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`data` in autocmd callback was introduced in Neovim=0.8.') end
-
   child.lua([[
     _G.n = 0
     local rhs = function() _G.n = _G.n + 1 end
@@ -3474,14 +3724,17 @@ T['Events']['`MiniFilesWindowOpen` triggers'] = function()
   validate_event_track({ { buf_id = buf_id_2, win_id = win_id_3 } })
 end
 
-T['Events']['`MiniFilesWindowOpen` can be used to create window-local mappings'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`data` in autocmd callback was introduced in Neovim=0.8.') end
+T['Events']['`MiniFilesWindowOpen` can be used to tweak window config'] = function()
+  if child.fn.has('nvim-0.9') == 0 then MiniTest.skip('Tested window config values appeared in Neovim 0.9') end
 
   child.lua([[
     vim.api.nvim_create_autocmd('User', {
       pattern = 'MiniFilesWindowOpen',
       callback = function(args)
-        vim.api.nvim_win_set_config(args.data.win_id, { border = 'double' })
+        local win_id = args.data.win_id
+        local config = vim.api.nvim_win_get_config(win_id)
+        config.border, config.title_pos = 'double', 'right'
+        vim.api.nvim_win_set_config(win_id, config)
       end,
     })
   ]])
@@ -3525,6 +3778,14 @@ T['Events']['`MiniFilesWindowUpdate` is not triggered for cursor move'] = functi
   type_keys('<Right>')
   type_keys('i', '<Left>')
   validate_event_track({})
+end
+
+T['Events']['`MiniFilesWindowUpdate` is triggered after current buffer is set'] = function()
+  track_event('MiniFilesWindowUpdate')
+  open(test_dir_path)
+  clear_event_track()
+  go_out()
+  validate_event_track({ { buf_id = 2, win_id = 1004 }, { buf_id = 3, win_id = 1003 } }, true)
 end
 
 T['Events']['`MiniFilesActionCreate` triggers'] = function()
@@ -3605,11 +3866,6 @@ T['Events']['`MiniFilesActionDelete` triggers for `options.permanent_delete = fa
   synchronize()
 
   local event_track = get_event_track()
-  if child.fn.has('nvim-0.8') == 0 then
-    eq(#event_track, 2)
-    return
-  end
-
   table.sort(event_track, function(a, b) return a.from < b.from end)
   eq(event_track, {
     { action = 'delete', from = join_path(temp_dir, 'dir') },
@@ -3783,13 +4039,15 @@ end
 
 T['Default explorer']['handles close without opening file'] = function()
   child.o.laststatus = 0
+  child.cmd('wincmd v')
   child.cmd('edit ' .. test_dir_path)
   child.expect_screenshot()
 
-  -- Should close and delete "scratch directory buffer"
+  -- Should close and smartly (preserving layout) delete "directory buffer"
   close()
   child.expect_screenshot()
   eq(child.api.nvim_buf_get_name(0), '')
+  eq(#child.api.nvim_list_bufs(), 1)
 end
 
 return T

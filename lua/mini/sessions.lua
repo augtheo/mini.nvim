@@ -63,7 +63,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniSessions.config|.
 ---
----@usage `require('mini.sessions').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.sessions').setup() -- use default config
+---   -- OR
+---   require('mini.sessions').setup({}) -- replace {} with your config table
+--- <
 MiniSessions.setup = function(config)
   -- Export module
   _G.MiniSessions = MiniSessions
@@ -148,12 +152,12 @@ MiniSessions.detected = {}
 ---     `MiniSessions.config.hooks.post.read`).
 MiniSessions.read = function(session_name, opts)
   if H.is_disabled() then return end
-  if vim.tbl_count(MiniSessions.detected) == 0 then
-    H.error('There is no detected sessions. Change configuration and rerun `MiniSessions.setup()`.')
-  end
 
   -- Make sessions up to date
   H.detect_sessions()
+  if vim.tbl_count(MiniSessions.detected) == 0 then
+    return H.message('There is no detected sessions. Change configuration and rerun `MiniSessions.setup()`.')
+  end
 
   -- Get session data
   if session_name == nil then
@@ -443,10 +447,8 @@ H.create_autocommands = function(config)
     local autoread = function()
       if not H.is_something_shown() then MiniSessions.read() end
     end
-    vim.api.nvim_create_autocmd(
-      'VimEnter',
-      { group = augroup, nested = true, once = true, callback = autoread, desc = 'Autoread latest session' }
-    )
+    local opts = { group = augroup, nested = true, once = true, callback = autoread, desc = 'Autoread latest session' }
+    vim.api.nvim_create_autocmd('VimEnter', opts)
   end
 
   if config.autowrite then
@@ -606,13 +608,8 @@ H.full_path = function(path) return vim.fn.resolve(vim.fn.fnamemodify(path, ':p'
 H.is_something_shown = function()
   -- Don't autoread session if Neovim is opened to show something. That is
   -- when at least one of the following is true:
-  -- - Current buffer has any lines (something opened explicitly).
-  -- NOTE: Usage of `line2byte(line('$') + 1) > 0` seemed to be fine, but it
-  -- doesn't work if some automated changed was made to buffer while leaving it
-  -- empty (returns 2 instead of -1). This was also the reason of not being
-  -- able to test with child Neovim process from 'tests/helpers'.
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
-  if #lines > 1 or (#lines == 1 and lines[1]:len() > 0) then return true end
+  -- - There are files in arguments (like `nvim foo.txt` with new file).
+  if vim.fn.argc() > 0 then return true end
 
   -- - Several buffers are listed (like session with placeholder buffers). That
   --   means unlisted buffers (like from `nvim-tree`) don't affect decision.
@@ -622,8 +619,18 @@ H.is_something_shown = function()
   )
   if #listed_buffers > 1 then return true end
 
-  -- - There are files in arguments (like `nvim foo.txt` with new file).
-  if vim.fn.argc() > 0 then return true end
+  -- - Current buffer is meant to show something else
+  if vim.bo.filetype ~= '' then return true end
+
+  -- - Current buffer has any lines (something opened explicitly).
+  -- NOTE: Usage of `line2byte(line('$') + 1) < 0` seemed to be fine, but it
+  -- doesn't work if some automated changed was made to buffer while leaving it
+  -- empty (returns 2 instead of -1). This was also the reason of not being
+  -- able to test with child Neovim process from 'tests/helpers'.
+  local n_lines = vim.api.nvim_buf_line_count(0)
+  if n_lines > 1 then return true end
+  local first_line = vim.api.nvim_buf_get_lines(0, 0, 1, true)[1]
+  if string.len(first_line) > 0 then return true end
 
   return false
 end

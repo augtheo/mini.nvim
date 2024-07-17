@@ -15,13 +15,11 @@ local poke_eventloop = function() child.api.nvim_eval('1') end
 local sleep = function(ms) vim.loop.sleep(ms); poke_eventloop() end
 --stylua: ignore end
 
--- Tweak `expect_screenshot()` to test only on Neovim=0.9 (as it introduced
--- titles and 0.10 introduced footer).
--- Use `child.expect_screenshot_orig()` for original testing.
+-- Tweak `expect_screenshot()` to test only on Neovim>=0.10 (as it has floating
+-- window footer). Use `child.expect_screenshot_orig()` for original testing.
 child.expect_screenshot_orig = child.expect_screenshot
-child.expect_screenshot = function(opts, allow_past_09)
-  -- TODO: Regenerate all screenshots with 0.10 after its stable release
-  if child.fn.has('nvim-0.9') == 0 or child.fn.has('nvim-0.10') == 1 then return end
+child.expect_screenshot = function(opts)
+  if child.fn.has('nvim-0.10') == 0 then return end
   child.expect_screenshot_orig(opts)
 end
 
@@ -1315,20 +1313,31 @@ T['default_show()']['shows best match'] = function()
 end
 
 T['default_show()']['respects `opts.show_icons`'] = function()
-  child.set_size(10, 45)
+  child.set_size(12, 45)
   local items = vim.tbl_map(real_file, vim.fn.readdir(real_files_dir))
   table.insert(items, test_dir)
   table.insert(items, join_path(test_dir, 'file'))
   table.insert(items, 'non-existing')
   table.insert(items, { text = 'non-string' })
+  table.insert(items, { path = join_path(test_dir, 'builtin-tests', 'file'), text = 'prefer-path-field' })
   local query = { 'i', 'i' }
 
-  -- Without 'nvim-web-devicons'
+  -- Without 'mini.icons'
   default_show(0, items, query, { show_icons = true })
   child.expect_screenshot()
 
-  -- With 'nvim-web-devicons'
+  -- With 'mini.icons'
+  child.lua('require("mini.icons").setup()')
+  default_show(0, items, query, { show_icons = true })
+  child.expect_screenshot()
+
+  -- Should still prefer 'mini.icons' even if 'nvim-web-devicons' is present
   child.cmd('set rtp+=tests/dir-pick')
+  default_show(0, items, query, { show_icons = true })
+  child.expect_screenshot()
+
+  -- With fallback 'nvim-web-devicons'
+  child.lua('_G.MiniIcons = nil')
   default_show(0, items, query, { show_icons = true })
   child.expect_screenshot()
 end
@@ -1344,11 +1353,18 @@ T['default_show()']['respects `opts.icons`'] = function()
 
   local icon_opts = { show_icons = true, icons = { directory = 'DD', file = 'FF', none = 'NN' } }
 
-  -- Without 'nvim-web-devicons'
+  -- Without 'mini.icons'
   default_show(0, items, query, icon_opts)
   child.expect_screenshot()
 
+  -- With 'mini.icons'
+  child.lua('require("mini.icons").setup()')
+  default_show(0, items, query, icon_opts)
+  -- - Should use "file" and "directory" defaults from 'mini.icons'
+  child.expect_screenshot()
+
   -- With 'nvim-web-devicons'
+  child.lua('_G.MiniIcons = nil')
   child.cmd('set rtp+=tests/dir-pick')
   default_show(0, items, query, icon_opts)
   child.expect_screenshot()
@@ -1428,7 +1444,7 @@ T['default_show()']['handles edge cases'] = function()
   child.set_size(5, 15)
 
   -- Should not treat empty string as directory
-  default_show(0, { ':1', ':1:1' }, {}, { show_icons = true })
+  default_show(0, { '\0001', '\0001\0001' }, {}, { show_icons = true })
   child.expect_screenshot()
 end
 
@@ -1492,12 +1508,16 @@ T['default_preview()']['works for file path with tilde'] = function()
   validate_preview({ path_tilde })
 end
 
+T['default_preview()']['works for URI path'] = function()
+  local items = { { text = real_file('LICENSE'), path = 'file:' .. full_path(real_file('LICENSE')) } }
+  validate_preview(items)
+end
+
 T['default_preview()']['shows line in file path'] = function()
   local path = real_file('b.txt')
   local items = {
-    path .. ':3',
-    { text = path .. ':line-in-path', path = path .. ':6' },
-    { text = path .. ':line-separate', path = path, lnum = 8 },
+    path .. '\0003',
+    { text = path .. '\0as-table', path = path, lnum = 6 },
   }
   validate_preview(items)
 end
@@ -1505,9 +1525,8 @@ end
 T['default_preview()']['shows position in file path'] = function()
   local path = real_file('b.txt')
   local items = {
-    path .. ':3:4',
-    { text = path .. ':pos-in-path', path = path .. ':6:2' },
-    { text = path .. ':pos-separate', path = path, lnum = 8, col = 3 },
+    path .. '\0003\0004',
+    { text = path .. '\0as-table', path = path, lnum = 6, col = 2 },
   }
   validate_preview(items)
 end
@@ -1515,8 +1534,8 @@ end
 T['default_preview()']['shows region in file path'] = function()
   local path = real_file('b.txt')
   local items = {
-    { text = path .. ':region-oneline', path = path, lnum = 8, col = 3, end_lnum = 8, end_col = 5 },
-    { text = path .. ':region-manylines', path = path, lnum = 9, col = 3, end_lnum = 11, end_col = 4 },
+    { text = path .. '\000region-oneline', path = path, lnum = 8, col = 3, end_lnum = 8, end_col = 5 },
+    { text = path .. '\000region-manylines', path = path, lnum = 9, col = 3, end_lnum = 11, end_col = 4 },
   }
   validate_preview(items)
 end
@@ -1664,7 +1683,7 @@ T['default_preview()']['respects `opts.n_context_lines`'] = function()
 
   local items = {
     -- File line
-    path .. ':4',
+    path .. '\0004',
 
     -- Buffer line
     { text = 'Buffer', bufnr = buf_id, lnum = 7 },
@@ -1687,7 +1706,7 @@ T['default_preview()']['respects `opts.line_position`'] = new_set({
 
     local items = {
       -- File line
-      path .. ':10',
+      path .. '\00010',
 
       -- Buffer line
       { text = 'Buffer', bufnr = buf_id, lnum = 12 },
@@ -1767,11 +1786,11 @@ T['default_choose()']['works for file path'] = function()
   validate({ text = path, path = path }, path, { 1, 0 })
 
   -- Path with line
-  validate(path .. ':4', path, { 4, 0 })
+  validate(path .. '\0004', path, { 4, 0 })
   validate({ text = path, path = path, lnum = 6 }, path, { 6, 0 })
 
   -- Path with position
-  validate(path .. ':8:2', path, { 8, 1 })
+  validate(path .. '\0008\0002', path, { 8, 1 })
   validate({ text = path, path = path, lnum = 10, col = 4 }, path, { 10, 3 })
 
   -- Path with region
@@ -1787,6 +1806,16 @@ T['default_choose()']['works for relative file path'] = function()
 
   -- Should open with relative path to have better view in `:buffers`
   expect.match(child.cmd_capture('buffers'), '"' .. vim.pesc(real_files_dir))
+end
+
+T['default_choose()']['works for URI path'] = function()
+  local path = full_path(real_file('LICENSE'))
+  local item = { path = 'file:' .. path }
+  local win_id = child.api.nvim_get_current_win()
+  default_choose(item)
+
+  local buf_id = child.api.nvim_win_get_buf(win_id)
+  validate_buf_name(buf_id, path)
 end
 
 T['default_choose()']['works for file path with tilde'] = function()
@@ -1822,7 +1851,7 @@ T['default_choose()']['reuses opened listed buffer for file path'] = function()
 
   -- Reuses with setting cursor
   child.api.nvim_set_current_buf(buf_id_alt)
-  default_choose(path .. ':7:2')
+  default_choose(path .. '\0007\0002')
   validate({ 7, 1 })
 
   -- Doesn't reuse if unlisted
@@ -2083,11 +2112,11 @@ T['default_choose_marked()']['creates quickfix list from file/buffer positions']
 
     { text = 'filepath', path = path },
 
-    path .. ':3',
+    path .. '\0003',
     { text = path, path = path, lnum = 4 },
 
-    path .. ':5:5',
-    path .. ':6:6:' .. 'extra text',
+    path .. '\0005\0005',
+    path .. '\0006\0006\000extra text',
     { text = path, path = path, lnum = 7, col = 7 },
 
     { text = path, path = path, lnum = 8, col = 8, end_lnum = 9, end_col = 9 },
@@ -2106,6 +2135,9 @@ T['default_choose_marked()']['creates quickfix list from file/buffer positions']
 
     { text = 'buffer', bufnr = buf_id, lnum = 7, col = 7, end_lnum = 8, end_col = 8 },
     { text = 'buffer', bufnr = buf_id, lnum = 7, col = 8, end_lnum = 8 },
+
+    -- URI
+    { path = 'file:' .. full_path(path) },
   }
 
   start_with_items(items)
@@ -2131,6 +2163,8 @@ T['default_choose_marked()']['creates quickfix list from file/buffer positions']
   validate_qfitem(qflist[15], { bufnr = buf_id, lnum = 6, col = 6, end_lnum = 0, end_col = 0 })
   validate_qfitem(qflist[16], { bufnr = buf_id, lnum = 7, col = 7, end_lnum = 8, end_col = 8 })
   validate_qfitem(qflist[17], { bufnr = buf_id, lnum = 7, col = 8, end_lnum = 8, end_col = 0 })
+
+  validate_qfitem(qflist[18], { filename = full_path(path), lnum = 1, col = 1, end_lnum = 0, end_col = 0 })
 end
 
 T['default_choose_marked()']['falls back to choosing first item'] = function()
@@ -2236,6 +2270,17 @@ T['ui_select()']['calls `on_choice` with target window being current'] = functio
   eq(child.lua_get('_G.cur_data'), { buf = buf_target, win = win_target })
 end
 
+T['ui_select()']['calls `on_choice` with the exact item'] = function()
+  -- Should not create copy as `on_choice()` might depend on item being exact
+  child.lua_notify([[
+    local items = { { 'a table' } }
+    local on_choice = function(item, idx) _G.are_same = items[idx] == item end
+    MiniPick.ui_select(items, {}, on_choice)
+  ]])
+  type_keys('<CR>')
+  eq(child.lua_get('_G.are_same'), true)
+end
+
 T['ui_select()']['respects `opts.prompt` and `opts.kind`'] = function()
   local validate = function(opts, source_name)
     ui_select({ -1, -2 }, opts)
@@ -2243,9 +2288,9 @@ T['ui_select()']['respects `opts.prompt` and `opts.kind`'] = function()
     stop()
   end
 
-  -- Should try using use both as source name (preferring `kind` over `prompt`)
+  -- Should try using use both as source name (preferring `prompt` over `kind`)
   validate({ prompt = 'Prompt' }, 'Prompt')
-  validate({ prompt = 'Prompt', kind = 'Kind' }, 'Kind')
+  validate({ prompt = 'Prompt', kind = 'Kind' }, 'Prompt')
 end
 
 T['ui_select()']['respects `opts.format_item`'] = function()
@@ -2300,6 +2345,25 @@ T['builtin.files()']['works'] = function()
   -- Should return chosen value
   type_keys('<CR>')
   eq(child.lua_get('_G.file_item'), items[1])
+end
+
+T['builtin.files()']['works with bad file names'] = function()
+  -- Paths with ":" may not be allowed on Windows
+  if child.loop.os_uname().sysname == 'Windows_NT' then return end
+
+  local path = join_path(test_dir, 'file:1')
+  child.fn.writefile({ 'File with ":" in the name' }, path)
+  MiniTest.finally(function() child.fn.delete(path) end)
+
+  mock_fn_executable({ 'rg' })
+  local items = { path }
+  mock_cli_return(items)
+
+  child.lua_notify('_G.file_item = MiniPick.builtin.files()')
+  type_keys('<CR>')
+  eq(child.lua_get('_G.file_item'), path)
+
+  eq(child.api.nvim_buf_get_name(0), full_path(path))
 end
 
 T['builtin.files()']['correctly chooses default tool'] = function()
@@ -2393,7 +2457,7 @@ local builtin_grep = forward_lua_notify('MiniPick.builtin.grep')
 T['builtin.grep()']['works'] = function()
   child.set_size(10, 70)
   mock_fn_executable({ 'rg' })
-  local items = { real_file('a.lua') .. ':3:3:a', real_file('b.txt') .. ':1:1:b' }
+  local items = { real_file('a.lua') .. '\0003\0003\000a', real_file('b.txt') .. '\0001\0001\000b' }
   mock_cli_return(items)
 
   child.lua_notify([[_G.grep_item = MiniPick.builtin.grep()]])
@@ -2414,7 +2478,7 @@ end
 T['builtin.grep()']['correctly chooses default tool'] = function()
   local validate = function(executables, ref_tool)
     mock_fn_executable(executables)
-    mock_cli_return({ real_file('b.txt') .. ':3:3:b' })
+    mock_cli_return({ real_file('b.txt') .. '\0003\0003\000b' })
     builtin_grep({ pattern = 'b' })
     if ref_tool ~= 'fallback' then eq(child.lua_get('_G.spawn_log[1].executable'), ref_tool) end
     validate_picker_option('source.name', string.format('Grep (%s)', ref_tool))
@@ -2482,7 +2546,13 @@ T['builtin.grep()']['has fallback tool'] = new_set({ parametrize = { { 'default'
 
     -- Sleep because fallback is async
     sleep(5)
-    eq(get_picker_items(), { 'file:3:1:aaa', 'dir1/file1-1:3:1:aaa', 'dir1/file1-2:3:1:aaa', 'dir2/file2-1:3:1:aaa' })
+    local ref_items = {
+      'file\0003\0001\000aaa',
+      'dir1/file1-1\0003\0001\000aaa',
+      'dir1/file1-2\0003\0001\000aaa',
+      'dir2/file2-1\0003\0001\000aaa',
+    }
+    eq(get_picker_items(), ref_items)
   end,
 })
 
@@ -2492,14 +2562,14 @@ T['builtin.grep()']['respects `source.show` from config'] = function()
   -- A recommended way to disable icons
   child.lua('MiniPick.config.source.show = MiniPick.default_show')
   mock_fn_executable({ 'rg' })
-  mock_cli_return({ real_file('b.txt') .. ':1:1' })
+  mock_cli_return({ real_file('b.txt') .. '\0001\0001' })
   builtin_grep({ pattern = 'b' })
   child.expect_screenshot()
 end
 
 T['builtin.grep()']['respects `opts`'] = function()
   mock_fn_executable({ 'rg' })
-  mock_cli_return({ real_file('b.txt') .. ':1:1' })
+  mock_cli_return({ real_file('b.txt') .. '\0001\0001' })
   builtin_grep({ pattern = 'b' }, { source = { name = 'My name' } })
   validate_picker_option('source.name', 'My name')
 end
@@ -2537,7 +2607,7 @@ end
 T['builtin.grep_live()']['works'] = function()
   child.set_size(10, 70)
   mock_fn_executable({ 'rg' })
-  local items = { real_file('a.lua') .. ':3:3:a', real_file('b.txt') .. ':1:1:b' }
+  local items = { real_file('a.lua') .. '\0003\0003\000a', real_file('b.txt') .. '\0001\0001\000b' }
 
   -- Should show no items for empty query
   child.lua_notify([[_G.grep_live_item = MiniPick.builtin.grep_live()]])
@@ -2567,7 +2637,7 @@ end
 
 T['builtin.grep_live()']['always shows no items for empty query'] = function()
   mock_fn_executable({ 'rg' })
-  local items = { real_file('a.lua') .. ':3:3:a', real_file('b.txt') .. ':1:1:b' }
+  local items = { real_file('a.lua') .. '\0003\0003\000a', real_file('b.txt') .. '\0001\0001\000b' }
 
   -- Showing empty query should be done without extra spawn
   mock_cli_return(items)
@@ -2588,7 +2658,7 @@ end
 
 T['builtin.grep_live()']['kills grep process on every non-empty query update'] = function()
   mock_fn_executable({ 'rg' })
-  local items = { real_file('a.lua') .. ':3:3:a', real_file('b.txt') .. ':1:1:b' }
+  local items = { real_file('a.lua') .. '\0003\0003\000a', real_file('b.txt') .. '\0001\0001\000b' }
 
   builtin_grep_live()
   eq(get_process_log(), {})
@@ -2613,7 +2683,7 @@ T['builtin.grep_live()']['works with programmatic query update'] = function()
   mock_fn_executable({ 'rg' })
   builtin_grep_live()
 
-  mock_cli_return({ real_file('b.txt') .. ':1:1:b' })
+  mock_cli_return({ real_file('b.txt') .. '\0001\0001\000b' })
   set_picker_query({ 'b', 't' })
   validate_last_grep_pattern('bt')
 
@@ -2624,7 +2694,7 @@ end
 T['builtin.grep_live()']['correctly chooses default tool'] = function()
   local validate = function(executables, ref_tool)
     mock_fn_executable(executables)
-    mock_cli_return({ real_file('b.txt') .. ':3:3:b' })
+    mock_cli_return({ real_file('b.txt') .. '\0003\0003\000b' })
     builtin_grep_live()
     type_keys('b')
     eq(child.lua_get('_G.spawn_log[1].executable'), ref_tool)
@@ -2661,8 +2731,8 @@ T['builtin.grep_live()']['respects `local_opts.tool`'] = function()
     clear_spawn_log()
   end
 
-  validate('rg', { '--column', '--line-number', '--no-heading', '--', 'b' })
-  validate('git', { 'grep', '--column', '--line-number', '--', 'b' })
+  validate('rg', { '--column', '--line-number', '--no-heading', '--field-match-separator=\\0', '--', 'b' })
+  validate('git', { 'grep', '--column', '--line-number', '--null', '--', 'b' })
 
   -- Should not accept "fallback" tool
   mock_fn_executable({})
@@ -2679,7 +2749,7 @@ T['builtin.grep_live()']['respects `source.show` from config'] = function()
   child.lua('MiniPick.config.source.show = MiniPick.default_show')
   mock_fn_executable({ 'rg' })
   builtin_grep_live()
-  mock_cli_return({ real_file('b.txt') .. ':1:1' })
+  mock_cli_return({ real_file('b.txt') .. '\0001\0001' })
   type_keys('b')
   child.expect_screenshot()
 end
@@ -2693,7 +2763,7 @@ end
 T['builtin.grep_live()']['respects `opts.source.cwd` for cli spawn'] = function()
   mock_fn_executable({ 'rg' })
   builtin_grep_live({}, { source = { cwd = test_dir } })
-  mock_cli_return({ real_file('b.txt') .. ':1:1' })
+  mock_cli_return({ real_file('b.txt') .. '\0001\0001' })
   type_keys('b')
 
   local test_dir_absolute = full_path(test_dir)
@@ -2707,7 +2777,8 @@ local builtin_help = forward_lua_notify('MiniPick.builtin.help')
 
 T['builtin.help()']['works'] = function()
   child.lua_notify('_G.help_item = MiniPick.builtin.help()')
-  child.expect_screenshot()
+  -- Ignore footer as it contains non-reliable number of help tags
+  child.expect_screenshot({ ignore_lines = { 14 } })
 
   -- Should set correct name
   validate_picker_option('source.name', 'Help')
@@ -2731,10 +2802,9 @@ T['builtin.help()']['has proper preview'] = function()
 
   builtin_help()
   type_keys('<Tab>')
-  child.expect_screenshot()
+  -- Ignore footer as it contains non-reliable number of help tags
+  child.expect_screenshot({ ignore_lines = { 14 } })
   eq(child.bo.buftype, 'nofile')
-  -- Neovim<0.8 should use built-in syntax, while Neovim>=0.8 - tree-sitter
-  if child.fn.has('nvim-0.8') == 0 then eq(child.bo.syntax, 'help') end
 
   eq(child.v.hlsearch, 0)
   eq(child.fn.getreg('/'), 'aa')
@@ -2767,7 +2837,8 @@ T['builtin.help()']['works for help tags with special characters'] = function()
   builtin_help()
   set_picker_query({ 'c_CTRL-K' })
   type_keys('<Tab>')
-  child.expect_screenshot()
+  -- Ignore footer as it contains non-reliable number of help tags
+  child.expect_screenshot({ ignore_lines = { 14 } })
 end
 
 T['builtin.help()']['works when help window is already opened'] = function()
@@ -3080,6 +3151,24 @@ T['builtin.resume()']['can be called consecutively'] = function()
   type_keys('<C-c>')
 end
 
+T['builtin.resume()']["restores 'cmdheight'"] = function()
+  start_with_items({ 'a' }, 'My name')
+  type_keys('<C-c>')
+
+  local validate = function(cmdheight)
+    child.o.cmdheight = cmdheight
+    builtin_resume()
+    -- Should *temporarily* force 'cmdheight=1' to both have place where to hide
+    -- cursor (in case of `cmdheight=0`) and increase available space for picker
+    eq(child.o.cmdheight, 1)
+    type_keys('<C-c>')
+    eq(child.o.cmdheight, cmdheight)
+  end
+
+  validate(3)
+  validate(0)
+end
+
 T['builtin.resume()']['validates if no picker was previously called'] = function()
   expect.error(function() child.lua('MiniPick.builtin.resume()') end, 'no picker to resume')
 end
@@ -3291,7 +3380,7 @@ T['get_picker_opts()']['works'] = function()
   validate_as_config('options')
   validate_as_config('config')
 
-  -- - Not supplied `source` callables chould be inferred
+  -- - Not supplied `source` callables should be inferred
   eq(child.lua_get('_G.res.source.items'), { 'a', 'b' })
   eq(child.lua_get('_G.res.source.name'), 'My name')
   eq(child.lua_get('_G.res.source.cwd'), full_path(child.fn.getcwd()))
@@ -3940,7 +4029,7 @@ T['poke_is_picker_active()']['works with running coroutine'] = function()
     coroutine.resume(coroutine.create(f))
     _G.is_active_direct = MiniPick.is_picker_active()
 
-    -- Dedect no poking before
+    -- Detect no poking before
     _G.has_not_poked_yet = _G.is_active_poke == nil
   ]])
   eq(child.lua_get('_G.is_active_direct'), true)
@@ -4138,8 +4227,6 @@ T['Overall view']["respects 'cmdheight'"] = function()
   end
 
   validate(3)
-
-  if child.fn.has('nvim-0.8') == 0 then return end
   validate(0)
 end
 
@@ -4351,6 +4438,18 @@ T['Main view']['properly computes items range to show'] = function()
     type_keys('<C-b>')
     child.expect_screenshot()
   end
+end
+
+T['Main view']['does not inherit highlighting from `matchparen`'] = function()
+  -- child.set_lines({ 'hello', 'world' })
+  -- child.fn.matchaddpos('Comment', { { 1, 1 }, { 1, 3 } })
+  child.cmd('packadd matchparen')
+  child.set_lines({ '(  )' })
+  child.set_cursor(1, 0)
+  if #child.fn.getmatches() == 0 then return MiniTest.skip('No "matchparen"') end
+
+  start_with_items({ 'aaaaaaaa' })
+  eq(child.fn.getmatches(get_picker_state().windows.main), {})
 end
 
 T['Info view'] = new_set()
@@ -4752,8 +4851,6 @@ end
 T['Key query process'] = new_set()
 
 T['Key query process']['respects mouse click'] = function()
-  helpers.skip_in_ci('Can not make this work consistently in CI.')
-
   child.set_size(10, 15)
 
   -- Should ignore if inside main window
@@ -4779,6 +4876,7 @@ T['Key query process']['respects mouse click'] = function()
   -- Should stop picker if outside of main window
   local validate_press_outside = function(button, row, col)
     start_with_items({ 'a' })
+    sleep(10)
     child.api.nvim_input_mouse(button, 'press', '', 0, row, col)
     sleep(10)
     eq(is_picker_active(), false)

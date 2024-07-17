@@ -108,6 +108,7 @@
 ---
 --- All operators are automatically mapped during |MiniOperators.setup()| execution.
 --- Mappings keys are deduced from `prefix` field of corresponding `config` entry.
+--- All built-in conflicting mappings are removed (like |gra|, |grn| in Neovim>=0.11).
 ---
 --- For each operator the following mappings are created:
 ---
@@ -127,24 +128,25 @@
 ---
 --- There are two suggested ways to customize mappings:
 ---
---- - Change `prefix` in |MiniOperators.setup()| call. For example, doing >
+--- - Change `prefix` in |MiniOperators.setup()| call. For example, doing >lua
 ---
----   require('mini.operators').setup({ replace = { prefix = 'cr' } })
+---     require('mini.operators').setup({ replace = { prefix = 'cr' } })
 --- <
----   will make mappings for `cr`/`crr`/`cr` instead of `gr`/`grr`/`gr`.
+---   will make mappings for `cr` / `crr` / `cr` instead of `gr` / `grr` / `gr`.
 ---
 --- - Disable automated mapping creation by supplying empty string as prefix and
----   use |MiniOperators.make_mappings()| directly. For example: >
+---   use |MiniOperators.make_mappings()| directly. For example: >lua
 ---
----   -- Disable automated creation of "replace"
----   local operators = require('mini.operators')
----   operators.setup({ replace = { prefix = '' } })
+---     -- Disable automated creation of "replace"
+---     local operators = require('mini.operators')
+---     operators.setup({ replace = { prefix = '' } })
 ---
----   -- Make custom mappings
----   operators.make_mappings(
----     'replace',
----     { textobject = 'cr', line = 'crr', selection = 'cr' }
----   )
+---     -- Make custom mappings
+---     operators.make_mappings(
+---       'replace',
+---       { textobject = 'cr', line = 'crr', selection = 'cr' }
+---     )
+--- <
 ---@tag MiniOperators-overview
 
 ---@alias __operators_mode string|nil One of `nil`, `'char'`, `'line'`, `''block`, `'visual'`.
@@ -165,7 +167,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniOperators.config|.
 ---
----@usage `require('mini.operators').setup({})` (replace `{}` with your `config` table).
+---@usage >lua
+---   require('mini.operators').setup() -- use default config
+---   -- OR
+---   require('mini.operators').setup({}) -- replace {} with your config table
+--- <
 MiniOperators.setup = function(config)
   -- Export module
   _G.MiniOperators = MiniOperators
@@ -243,7 +249,7 @@ end
 --- Takes content table as input (see "Evaluate" section) and should return
 --- array of lines as output.
 ---
---- Example of `sort.func` which asks user for custom delimiter for charwise region: >
+--- Example of `sort.func` which asks user for custom delimiter for charwise region: >lua
 ---
 ---   local sort_func = function(content)
 ---     local opts = {}
@@ -515,11 +521,12 @@ end
 ---   Supply empty string to not create particular mapping. Note: creating `line`
 ---   mapping needs `textobject` mapping to be set.
 ---
----@usage >
+---@usage >lua
 ---   require('mini.operators').make_mappings(
 ---     'replace',
 ---     { textobject = 'cr', line = 'crr', selection = 'cr' }
 ---   )
+--- <
 MiniOperators.make_mappings = function(operator_name, lhs_tbl)
   -- Validate arguments
   if not (type(operator_name) == 'string' and MiniOperators[operator_name] ~= nil) then
@@ -617,7 +624,7 @@ MiniOperators.default_sort_func = function(content, opts)
   if not vim.is_callable(compare_fun) then H.error('`opts.compare_fun` should be callable.') end
 
   local split_patterns = opts.split_patterns or { '%s*,%s*', '%s*;%s*', '%s+', '' }
-  if not vim.tbl_islist(split_patterns) then H.error('`opts.split_patterns` should be array.') end
+  if not H.islist(split_patterns) then H.error('`opts.split_patterns` should be array.') end
 
   -- Prepare lines to sort
   local lines, submode = content.lines, content.submode
@@ -694,11 +701,25 @@ end
 H.apply_config = function(config)
   MiniOperators.config = config
 
+  local remove_lsp_mapping = function(mode, lhs)
+    local map_desc = vim.fn.maparg(lhs, mode, false, true).desc
+    if map_desc == nil or string.find(map_desc, 'vim%.lsp') == nil then return end
+    vim.keymap.del(mode, lhs)
+  end
+
   -- Make mappings
   local map_all = function(operator_name)
     -- Map only valid LHS
     local prefix = config[operator_name].prefix
     if type(prefix) ~= 'string' or prefix == '' then return end
+
+    -- Remove conflicting built-in mappings
+    if prefix == 'gr' and vim.fn.has('nvim-0.11') == 1 then
+      remove_lsp_mapping('n', 'gra')
+      remove_lsp_mapping('x', 'gra')
+      remove_lsp_mapping('n', 'grr')
+      remove_lsp_mapping('n', 'grn')
+    end
 
     local lhs_tbl = {
       textobject = prefix,
@@ -910,9 +931,8 @@ H.exchange_del_stop_mapping = function()
   local map_data = H.cache.exchange.stop_restore_map_data
   if map_data == nil then return end
 
-  -- Try restore previous mapping if it was set. NOTE: Neovim<0.8 doesn't have
-  -- `mapset()`, so resort to deleting.
-  if vim.tbl_count(map_data) > 0 and vim.fn.has('nvim-0.8') == 1 then
+  -- Try restore previous mapping if it was set
+  if vim.tbl_count(map_data) > 0 then
     vim.fn.mapset('n', false, map_data)
   else
     vim.keymap.del('n', map_data.lhs or '<C-c>')
@@ -936,11 +956,6 @@ H.multiply_get_ref_coords = function(mark_from, mark_to, submode)
   -- In blockwise selection go to top right corner (allowing for presence of
   -- multibyte characters)
   local row = math.min(markcoords_from[1], markcoords_to[1])
-  if vim.fn.has('nvim-0.8') == 0 then
-    -- Neovim<0.8 doesn't have `virtcol2col()`
-    local col = math.max(markcoords_from[2], markcoords_to[2])
-    return { row, col - 1 }
-  end
 
   -- - "from"/"to" may not only be "top-left"/"bottom-right" but also
   --   "top-right" and "bottom-left"
@@ -973,8 +988,8 @@ H.replace_do = function(data)
   local mark_from, mark_to = data.mark_from, data.mark_to
 
   -- Do nothing with empty/unknown register
-  local register_type = H.get_reg_type(register)
-  if register_type == '' then H.error('Register ' .. vim.inspect(register) .. ' is empty or unknown.') end
+  local reg_info = vim.fn.getreginfo(register)
+  if reg_info.regtype == nil then H.error('Register ' .. vim.inspect(register) .. ' is empty or unknown.') end
 
   -- Determine if region is at edge which is needed for the correct paste key
   local from_line, from_col = unpack(H.get_mark(mark_from))
@@ -1002,16 +1017,18 @@ H.replace_do = function(data)
     { mark_from = mark_from, mark_to = mark_to, submode = forced_motion, mode = data.mode, register = '_' }
   H.do_between_marks('d', delete_data)
 
-  -- Paste register (ensuring same submode type as region)
-  H.with_temp_context({ registers = { register } }, function()
-    H.set_reg_type(register, submode)
+  -- Modify register data to have proper submode and indent
+  local new_reg_info = vim.deepcopy(reg_info)
+  if new_reg_info.regtype:sub(1, 1) ~= submode then new_reg_info.regtype = submode end
+  if should_reindent then new_reg_info.regcontents = H.update_indent(new_reg_info.regcontents, init_indent) end
+  vim.fn.setreg(register, new_reg_info)
 
-    -- Possibly reindent
-    if should_reindent then H.set_reg_indent(register, init_indent) end
+  -- Paste
+  local paste_keys = string.format('%d"%s%s', data.count or 1, register, (is_edge and 'p' or 'P'))
+  H.cmd_normal(paste_keys)
 
-    local paste_keys = string.format('%d"%s%s', data.count or 1, register, (is_edge and 'p' or 'P'))
-    H.cmd_normal(paste_keys)
-  end)
+  -- Restore register data
+  vim.fn.setreg(register, reg_info)
 
   -- Adjust cursor to be at start mark
   vim.api.nvim_win_set_cursor(0, { from_line, from_col })
@@ -1126,27 +1143,7 @@ H.do_between_marks = function(operator, data)
   vim.o.selection = cache_selection
 end
 
-H.is_content = function(x) return type(x) == 'table' and vim.tbl_islist(x.lines) and type(x.submode) == 'string' end
-
--- Registers ------------------------------------------------------------------
-H.get_reg_type = function(regname) return vim.fn.getregtype(regname):sub(1, 1) end
-
-H.set_reg_type = function(regname, new_regtype)
-  local reg_info = vim.fn.getreginfo(regname)
-  local cur_regtype, n_lines = reg_info.regtype:sub(1, 1), #reg_info.regcontents
-
-  -- Do nothing if already the same type
-  if cur_regtype == new_regtype then return end
-
-  reg_info.regtype = new_regtype
-  vim.fn.setreg(regname, reg_info)
-end
-
-H.set_reg_indent = function(regname, new_indent)
-  local reg_info = vim.fn.getreginfo(regname)
-  reg_info.regcontents = H.update_indent(reg_info.regcontents, new_indent)
-  vim.fn.setreg(regname, reg_info)
-end
+H.is_content = function(x) return type(x) == 'table' and H.islist(x.lines) and type(x.submode) == 'string' end
 
 -- Marks ----------------------------------------------------------------------
 H.get_region_data = function(mode)
@@ -1274,5 +1271,8 @@ H.cmd_normal = function(command, opts)
 
   if cancel_redo then H.cancel_redo() end
 end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
 
 return MiniOperators

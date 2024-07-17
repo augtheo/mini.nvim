@@ -1160,11 +1160,6 @@ local validate_keys = function(input_lines, keys, output_lines)
   eq(get_lines(), output_lines)
 end
 
--- NOTEs:
--- - In Neovim=0.5 some textobjects in Operator-pending mode don't set linewise
---   mode (like `ip`). However in Visual mode they do. So if Neovim=0.5 support
---   is needed, write tests with explicit forcing of linewise selection.
-
 T['Align'] = new_set()
 
 T['Align']['works'] = function()
@@ -1339,10 +1334,9 @@ T['Align']['prompts helper message after one idle second'] = new_set({
   parametrize = { { 'Normal' }, { 'Visual' } },
 }, {
   test = function(test_mode)
-    -- Check this only on Neovim>=0.9, as there is a slight change in
-    -- highlighting command line area. Probably, after
-    -- https://github.com/neovim/neovim/pull/20476
-    if child.fn.has('nvim-0.9') == 0 then return end
+    -- Check this only on Neovim>=0.10, as there is a slight change in
+    -- highlighting command line area
+    if child.fn.has('nvim-0.10') == 0 then return end
 
     local expect_screenshot = function() child.expect_screenshot({ redraw = false }) end
     child.set_size(12, 20)

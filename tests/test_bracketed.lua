@@ -973,6 +973,13 @@ end
 
 T['diagnostic()'] = new_set()
 
+local diagnostic = function(direction, opts)
+  opts = opts or {}
+  -- Force traversing of all diagnostics. It is needed on Neovim>=0.10.
+  opts.severity = opts.severity or { min = child.lua_get('vim.diagnostic.severity.HINT') }
+  return child.lua_get('MiniBracketed.diagnostic(...)', { direction, opts })
+end
+
 local setup_diagnostic = function()
   local mock_data = dofile(make_testpath('mock/diagnostic.lua'))
   set_lines(mock_data.lines)
@@ -984,7 +991,7 @@ local setup_diagnostic = function()
   local cursor_position_tbl = mock_data.cursor_positions
   local validate = function(pos_before, direction, pos_after, opts)
     set_cursor(unpack(pos_before))
-    child.lua('MiniBracketed.diagnostic(...)', { direction, opts })
+    diagnostic(direction, opts)
     eq(get_cursor(), pos_after)
   end
 
@@ -1025,7 +1032,7 @@ T['diagnostic()']['works on first/last diagnostic'] = function()
 
   local validate = function(pos_before, direction, pos_after, opts)
     set_cursor(unpack(pos_before))
-    child.lua('MiniBracketed.diagnostic(...)', { direction, opts })
+    diagnostic(direction, opts)
     eq(get_cursor(), pos_after)
   end
 
@@ -1090,7 +1097,7 @@ T['diagnostic()']['opens floating window'] = function()
 
   -- From not diagnostic position and not showing floating window
   set_cursor(1, 2)
-  forward('diagnostic')
+  diagnostic('forward')
   eq(get_cursor(), all[2])
 
   -- -- Actual testing of floating window fails for some unimagniable reason.
@@ -1099,7 +1106,7 @@ T['diagnostic()']['opens floating window'] = function()
   -- eq(#windows, 2)
 
   -- From diagnostic position and showing floating window
-  forward('diagnostic')
+  diagnostic('forward')
   eq(get_cursor(), all[3])
 
   -- -- Again, can't test, but seems to works fine.
@@ -1108,8 +1115,8 @@ T['diagnostic()']['opens floating window'] = function()
 end
 
 T['diagnostic()']['validates `direction`'] = function()
-  expect.error(function() child.lua('MiniBracketed.diagnostic(1)') end, 'diagnostic%(%).*direction.*one of')
-  expect.error(function() child.lua([[MiniBracketed.diagnostic('next')]]) end, 'diagnostic%(%).*direction.*one of')
+  expect.error(function() diagnostic(1) end, 'diagnostic%(%).*direction.*one of')
+  expect.error(function() diagnostic('next') end, 'diagnostic%(%).*direction.*one of')
 end
 
 T['diagnostic()']['adds to jumplist'] = function()
@@ -1117,7 +1124,7 @@ T['diagnostic()']['adds to jumplist'] = function()
   local all = cur_pos_tbl.all
 
   set_cursor(all[2][1], all[2][2])
-  child.lua([[MiniBracketed.diagnostic('forward', { n_times = 4 })]])
+  diagnostic('forward', { n_times = 4 })
 
   eq(get_cursor(), all[6])
 
@@ -1136,7 +1143,7 @@ T['diagnostic()']['respects `opts.n_times`'] = function()
 
   local validate = function(id_before, direction, id_ref, opts)
     set_cursor(unpack(all[id_before]))
-    child.lua('MiniBracketed.diagnostic(...)', { direction, opts })
+    diagnostic(direction, opts)
     eq(get_cursor(), all[id_ref])
   end
 
@@ -1160,7 +1167,7 @@ T['diagnostic()']['respects `opts.severity`'] = new_set({
 
     local validate = function(id_before, direction, id_ref)
       set_cursor(unpack(positions[id_before]))
-      child.lua('MiniBracketed.diagnostic(...)', { direction, { severity = severity } })
+      diagnostic(direction, { severity = severity })
       eq(get_cursor(), positions[id_ref])
     end
 
@@ -1174,7 +1181,7 @@ T['diagnostic()']['respects `opts.wrap`'] = function()
 
   local validate = function(id_before, direction, id_ref, opts)
     set_cursor(unpack(all[id_before]))
-    child.lua('MiniBracketed.diagnostic(...)', { direction, opts })
+    diagnostic(direction, opts)
     eq(get_cursor(), all[id_ref])
   end
 
@@ -1914,6 +1921,9 @@ local setup_oldfile = function()
     child.lua('MiniBracketed.oldfile(...)', { direction, opts })
     validate_test_file(file_arr[id_ref])
   end
+  -- Make sure that shada is not written before qutting child process as it
+  -- affects the same shada file that user uses
+  child.o.shadafile = 'NONE'
   return file_arr, validate
 end
 
@@ -1974,16 +1984,16 @@ end
 T['oldfile()']['is initialized with `v:oldfiles`'] = function()
   -- Enable shada
   local shada_path = make_testpath('oldfile.shada')
-  child.o.shadafile = ''
   MiniTest.finally(function() child.fn.delete(shada_path) end)
 
   -- Set up `v:oldfiles`
   setup_oldfile()
+  child.o.shadafile = shada_path
   child.cmd('wshada! ' .. shada_path)
 
   child.restart()
   load_module()
-  child.o.shadafile = ''
+  child.o.shadafile = shada_path
   child.cmd('rshada! ' .. shada_path)
 
   -- Notes:
@@ -2002,6 +2012,8 @@ T['oldfile()']['is initialized with `v:oldfiles`'] = function()
 
   backward('oldfile', { n_times = 2 })
   eq(get_bufname(), files[n - 1])
+
+  child.o.shadafile = 'NONE'
 end
 
 T['oldfile()']['validates `direction`'] = function()
@@ -2238,15 +2250,7 @@ T['quickfix()']['respects `vim.b.minibracketed_config`'] = function()
   eq(get_cursor(), cur_pos)
 end
 
-T['treesitter()'] = new_set({
-  hooks = {
-    pre_case = function()
-      -- Imitate `get_node_at_pos()` to pass tests with mocks on Neovim<0.8
-      child.lua('vim.treesitter.get_node_at_pos = function() end')
-      reload_module()
-    end,
-  },
-})
+T['treesitter()'] = new_set()
 
 local setup_treesitter = function()
   -- Make `vim.treesitter.get_node_at_pos()` return mock of tree-sitter node
@@ -2351,14 +2355,6 @@ end
 T['treesitter()']['handles error when finding node at cursor'] = function()
   child.lua('vim.treesitter.get_node_at_pos = function() error("No tree-sitter") end')
   expect.error(function() forward('treesitter') end, 'can not find tree%-sitter node')
-end
-
-T['treesitter()']['requires `vim.treesitter.get_node_at_pos()` or `vim.treesitter.get_node()`'] = function()
-  child.lua('vim.treesitter.get_node_at_pos = nil')
-  child.lua('vim.treesitter.get_node = nil')
-  reload_module()
-
-  expect.error(function() forward('treesitter') end, 'get_node_at_pos%(%).*')
 end
 
 T['treesitter()']['validates `direction`'] = function()
@@ -2533,8 +2529,6 @@ T['undo()']["works with low 'undolevels'"] = function()
 end
 
 T['undo()']['works with `:undo!` when not advancing'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`undo!` was implemented in Neovim 0.8') end
-
   --stylua: ignore
   setup_undo(
     { 'i', 'one',    '<Esc>' }, -- one
@@ -2559,8 +2553,6 @@ T['undo()']['works with `:undo!` when not advancing'] = function()
 end
 
 T['undo()']['works with `:undo!` advancing'] = function()
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`undo!` was implemented in Neovim 0.8.') end
-
   -- NOTE: Be careful with executing `:undo!` when not in latest undo state
   -- See: https://github.com/neovim/neovim/issues/22298
 
@@ -2695,7 +2687,7 @@ T['undo()']['does not append currently advanced state if same as last one'] = fu
   backward('undo')
   validate_undo({ 'one' }, 1)
 
-  -- If currently advanced state was appened, this would repeat state 1
+  -- If currently advanced state was appended, this would repeat state 1
   backward('undo')
   validate_undo({ 'one two' }, 2)
 end
@@ -3835,6 +3827,8 @@ T['Mappings']['diagnostic']['works'] = function()
   local all = cur_pos_tbl.all
   local n = #all
 
+  child.lua('MiniBracketed.config.diagnostic.options = { severity = { min = vim.diagnostic.severity.HINT } }')
+
   -- Normal mode
   validate_move(all[3], '[D', all[1])
   validate_move(all[2], '2[d', all[n])
@@ -3870,7 +3864,7 @@ T['Mappings']['diagnostic']['works'] = function()
 end
 
 T['Mappings']['diagnostic']['allows non-letter suffix'] = function()
-  reload_module({ diagnostic = { suffix = ',' } })
+  reload_module({ diagnostic = { suffix = ',', options = { severity = { min = vim.diagnostic.severity.HINT } } } })
 
   local cur_pos_tbl = setup_diagnostic()
   local all = cur_pos_tbl.all
@@ -4108,15 +4102,7 @@ T['Mappings']['quickfix']['allows non-letter suffix'] = function()
   validate_map_quickfix(1, '],', 2)
 end
 
-T['Mappings']['treesitter'] = new_set({
-  hooks = {
-    pre_case = function()
-      -- Imitate `get_node_at_pos()` to pass tests with mocks on Neovim<0.8
-      child.lua('vim.treesitter.get_node_at_pos = function() end')
-      reload_module()
-    end,
-  },
-})
+T['Mappings']['treesitter'] = new_set()
 
 T['Mappings']['treesitter']['works'] = function()
   local nodes, _, inside_nodes = setup_treesitter()

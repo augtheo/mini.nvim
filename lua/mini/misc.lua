@@ -48,7 +48,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniMisc.config|.
 ---
----@usage `require('mini.misc').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.misc').setup() -- use default config
+---   -- OR
+---   require('mini.misc').setup({}) -- replace {} with your config table
+--- <
 MiniMisc.setup = function(config)
   -- Export module
   _G.MiniMisc = MiniMisc
@@ -177,20 +181,14 @@ end
 ---   to it (using |chdir()|).
 --- - Resets |autochdir| to `false`.
 ---
---- Note: requires |vim.fs| module (present in Neovim>=0.8).
----
 ---@param names table|function|nil Forwarded to |MiniMisc.find_root()|.
 ---@param fallback function|nil Forwarded to |MiniMisc.find_root()|.
 ---
----@usage >
+---@usage >lua
 ---   require('mini.misc').setup()
 ---   MiniMisc.setup_auto_root()
+--- <
 MiniMisc.setup_auto_root = function(names, fallback)
-  if vim.fs == nil then
-    vim.notify('(mini.misc) `setup_auto_root()` requires `vim.fs` module (present in Neovim>=0.8).')
-    return
-  end
-
   names = names or { '.git', 'Makefile' }
   if not (H.is_array_of(names, H.is_string) or vim.is_callable(names)) then
     H.error('Argument `names` of `setup_auto_root()` should be array of string file names or a callable.')
@@ -225,7 +223,6 @@ end
 --- directory of current buffer file until first occurrence of root file(s).
 ---
 --- Notes:
---- - Requires |vim.fs| module (present in Neovim>=0.8).
 --- - Uses directory path caching to speed up computations. This means that no
 ---   changes in root directory will be detected after directory path was already
 ---   used in this function. Reload Neovim to account for that.
@@ -299,8 +296,9 @@ H.root_cache = {}
 ---   - <ignore_filetype> - Array with file types to be ignored (see 'filetype').
 ---     Default: `{ "gitcommit", "gitrebase" }`.
 ---
----@usage >
+---@usage >lua
 ---   require('mini.misc').setup_restore_cursor()
+--- <
 MiniMisc.setup_restore_cursor = function(opts)
   opts = opts or {}
 
@@ -461,9 +459,11 @@ end
 --- and "second-level" comments with '----'. With nested comment leader second
 --- type can be formatted with `gq` in the same way as first one.
 ---
---- Recommended usage is with |autocmd|:
---- `autocmd BufEnter * lua pcall(require('mini.misc').use_nested_comments)`
+--- Recommended usage is with |autocmd|: >lua
 ---
+---   local use_nested_comments = function() MiniMisc.use_nested_comments() end
+---   vim.api.nvim_create_autocmd('BufEnter', { callback = use_nested_comments })
+--- <
 --- Note: for most filetypes 'commentstring' option is added only when buffer
 --- with this filetype is entered, so using non-current `buf_id` can not lead
 --- to desired effect.
@@ -559,7 +559,7 @@ end
 H.error = function(msg) error(string.format('(mini.misc) %s', msg)) end
 
 H.is_array_of = function(x, predicate)
-  if not vim.tbl_islist(x) then return false end
+  if not H.islist(x) then return false end
   for _, v in ipairs(x) do
     if not predicate(v) then return false end
   end
@@ -569,5 +569,8 @@ end
 H.is_number = function(x) return type(x) == 'number' end
 
 H.is_string = function(x) return type(x) == 'string' end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
 
 return MiniMisc

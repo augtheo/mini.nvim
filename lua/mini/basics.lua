@@ -70,7 +70,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniBasics.config|.
 ---
----@usage `require('mini.basics').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.basics').setup() -- use default config
+---   -- OR
+---   require('mini.basics').setup({}) -- replace {} with your config table
+--- <
 MiniBasics.setup = function(config)
   -- Export module
   _G.MiniBasics = MiniBasics
@@ -89,7 +93,8 @@ end
 ---@text                                                      *MiniBasics.config.options*
 --- # Options ~
 ---
---- Usage example: >
+--- Usage example: >lua
+---
 ---   require('mini.basics').setup({
 ---     options = {
 ---       basic = true,
@@ -97,7 +102,7 @@ end
 ---       win_borders = 'double',
 ---     }
 ---   })
----
+--- <
 --- ## options.basic ~
 ---
 --- The `config.options.basic` sets certain options to values which are quite
@@ -170,7 +175,8 @@ end
 ---                                                     *MiniBasics.config.mappings*
 --- # Mappings ~
 ---
---- Usage example: >
+--- Usage example: >lua
+---
 ---   require('mini.basics').setup({
 ---     mappings = {
 ---       basic = true,
@@ -179,13 +185,9 @@ end
 ---       move_with_alt = true,
 ---     }
 ---   })
----
+--- <
 --- If you don't want only some mappings to be made at all, use |vim.keymap.del()|
---- after calling |MiniMisc.setup()|. For example, to delete `<C-w>` mapping in
---- |Terminal-mode| (as it conflicts with `<C-w>` usage in terminal emulators)
---- use this code: >
----
----   vim.keymap.del('t', '<C-w>').
+--- after calling |MiniBasics.setup()|.
 ---
 --- ## mappings.basic ~
 ---
@@ -244,7 +246,7 @@ end
 --- - `b` - |'background'|.
 --- - `c` - |'cursorline'|.
 --- - `C` - |'cursorcolumn'|.
---- - `d` - diagnostic (via |vim.diagnostic.enable()| and |vim.diagnostic.disable()|).
+--- - `d` - diagnostic (via |vim.diagnostic| functions).
 --- - `h` - |'hlsearch'| (or |v:hlsearch| to be precise).
 --- - `i` - |'ignorecase'|.
 --- - `l` - |'list'|.
@@ -289,14 +291,15 @@ end
 ---                                                 *MiniBasics.config.autocommands*
 --- # Autocommands ~
 ---
---- Usage example: >
+--- Usage example: >lua
+---
 ---   require('mini.basics').setup({
 ---     autocommands = {
 ---       basic = true,
 ---       relnum_in_visual_mode = true,
 ---     }
 ---   })
----
+--- <
 --- ## autocommands.basic ~
 ---
 --- The `config.autocommands.basic` creates some common autocommands:
@@ -355,22 +358,22 @@ MiniBasics.config = {
 
 --- Toggle diagnostic for current buffer
 ---
---- This uses |vim.diagnostic.enable()| and |vim.diagnostic.disable()| on
---- per buffer basis.
+--- This uses |vim.diagnostic| functions per buffer.
 ---
 ---@return string String indicator for new state. Similar to what |:set| `{option}?` shows.
 MiniBasics.toggle_diagnostic = function()
   local buf_id = vim.api.nvim_get_current_buf()
-  local buf_state = H.buffer_diagnostic_state[buf_id]
-  if buf_state == nil then buf_state = true end
+  local is_enabled = H.diagnostic_is_enabled(buf_id)
 
-  if buf_state then
-    vim.diagnostic.disable(buf_id)
+  local f
+  if vim.fn.has('nvim-0.10') == 1 then
+    f = function(bufnr) vim.diagnostic.enable(not is_enabled, { bufnr = bufnr }) end
   else
-    vim.diagnostic.enable(buf_id)
+    f = is_enabled and vim.diagnostic.disable or vim.diagnostic.enable
   end
+  f(buf_id)
 
-  local new_buf_state = not buf_state
+  local new_buf_state = not is_enabled
   H.buffer_diagnostic_state[buf_id] = new_buf_state
 
   return new_buf_state and '  diagnostic' or 'nodiagnostic'
@@ -687,10 +690,11 @@ end
 
 H.is_default_keymap = function(mode, lhs, map_info)
   if map_info == nil then return true end
-  local rhs = map_info.rhs or ''
+  local rhs, desc = map_info.rhs or '', map_info.desc or ''
 
   -- Some mappings are set by default in Neovim
   if mode == 'n' and lhs == '<C-L>' then return rhs:find('nohl') ~= nil end
+  if mode == 'i' and lhs == '<C-S>' then return desc:find('signature') ~= nil end
   if mode == 'x' and lhs == '*' then return rhs == [[y/\V<C-R>"<CR>]] end
   if mode == 'x' and lhs == '#' then return rhs == [[y?\V<C-R>"<CR>]] end
 end
@@ -745,6 +749,18 @@ H.map = function(mode, lhs, rhs, opts)
   if lhs == '' then return end
   opts = vim.tbl_deep_extend('force', { silent = true }, opts or {})
   vim.keymap.set(mode, lhs, rhs, opts)
+end
+
+if vim.fn.has('nvim-0.10') == 1 then
+  H.diagnostic_is_enabled = function(buf_id) return vim.diagnostic.is_enabled({ bufnr = buf_id }) end
+elseif vim.fn.has('nvim-0.9') == 1 then
+  H.diagnostic_is_enabled = function(buf_id) return not vim.diagnostic.is_disabled(buf_id) end
+else
+  H.diagnostic_is_enabled = function(buf_id)
+    local res = H.buffer_diagnostic_state[buf_id]
+    if res == nil then res = true end
+    return res
+  end
 end
 
 return MiniBasics

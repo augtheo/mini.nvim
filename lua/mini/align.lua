@@ -359,35 +359,35 @@
 ---
 --- Equal sign ~
 ---
---- Lines:
+--- Lines: >
 ---
---- # This=is=assumed=to be a comment
---- "a ="
---- a =
---- a = 1
---- bbbb = 2
---- ccccccc = 3
---- ccccccccccccccc
---- ddd = 4
---- eeee === eee = eee = eee=f
---- fff = ggg += gg &&= gg
---- g != hhhhhhhh == 888
---- i   := 5
---- i     %= 5
---- i       *= 5
---- j     =~ 5
---- j   >= 5
---- aa      =>         123
---- aa <<= 123
---- aa        >>= 123
---- bbb               => 123
---- c     => 1233123
---- d   =>      123
---- dddddd &&= 123
---- dddddd ||= 123
---- dddddd /= 123
---- gg <=> ee
----
+---   # This=is=assumed=to be a comment
+---   "a ="
+---   a =
+---   a = 1
+---   bbbb = 2
+---   ccccccc = 3
+---   ccccccccccccccc
+---   ddd = 4
+---   eeee === eee = eee = eee=f
+---   fff = ggg += gg &&= gg
+---   g != hhhhhhhh == 888
+---   i   := 5
+---   i     %= 5
+---   i       *= 5
+---   j     =~ 5
+---   j   >= 5
+---   aa      =>         123
+---   aa <<= 123
+---   aa        >>= 123
+---   bbb               => 123
+---   c     => 1233123
+---   d   =>      123
+---   dddddd &&= 123
+---   dddddd ||= 123
+---   dddddd /= 123
+---   gg <=> ee
+--- <
 --- Key sequences:
 --- - `=`
 --- - `=jc`
@@ -400,7 +400,6 @@
 --- - `=fn==1<CR>`
 --- - `=<BS>fn==1<CR>t`
 --- - `=frow>7<CR>`
----
 ---@tag MiniAlign-examples
 
 ---@alias __align_with_preview boolean|nil Whether to align with live preview.
@@ -413,7 +412,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniAlign.config|.
 ---
----@usage `require('mini.align').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.align').setup() -- use default config
+---   -- OR
+---   require('mini.align').setup({}) -- replace {} with your config table
+--- <
 MiniAlign.setup = function(config)
   -- Export module
   _G.MiniAlign = MiniAlign
@@ -442,14 +445,14 @@ end
 --- - Has signature `(steps, opts)` and should modify any of its input in place.
 ---
 --- Examples:
---- - Modifier function used for default 'i' modifier:
---- >
+--- - Modifier function used for default 'i' modifier: >lua
+---
 ---   function(steps, _)
 ---     table.insert(steps.pre_split, MiniAlign.gen_step.ignore_split())
 ---   end
 --- <
---- - Tweak 't' modifier to use highest indentation instead of keeping it:
---- >
+--- - Tweak 't' modifier to use highest indentation instead of keeping it: >lua
+---
 ---   require('mini.align').setup({
 ---     modifiers = {
 ---       t = function(steps, _)
@@ -460,8 +463,8 @@ end
 ---   })
 --- <
 --- - Tweak `j` modifier to cycle through available "justify_side" option
----   values (like in 'junegunn/vim-easy-align'):
---- >
+---   values (like in 'junegunn/vim-easy-align'): >lua
+---
 ---   require('mini.align').setup({
 ---     modifiers = {
 ---       j = function(_, opts)
@@ -490,14 +493,15 @@ end
 --- alignment process.
 ---
 --- Examples:
---- - Align by default only first pair of columns:
---- >
+--- - Align by default only first pair of columns: >lua
+---
 ---   local align = require('mini.align')
 ---   align.setup({
 ---     steps = {
 ---       pre_justify = { align.gen_step.filter('n == 1') }
 ---     },
 ---   })
+--- <
 MiniAlign.config = {
   -- Module mappings. Use `''` (empty string) to disable one.
   mappings = {
@@ -848,7 +852,7 @@ end
 ---   in a row). Value "keep" keeps it; "low" makes all indent equal to the
 ---   lowest across rows; "high" - highest across rows; "remove" - removes indent.
 ---
----@usage >
+---@usage >lua
 ---   parts = MiniAlign.as_parts({ { 'a', 'b' }, { 'c' } })
 ---   print(vim.inspect(parts.get_dims())) -- Should be { row = 2, col = 2 }
 ---
@@ -859,6 +863,7 @@ end
 ---
 ---   parts.trim('both', 'remove').pair()
 ---   print(vim.inspect(parts)) -- Should be { { '1a11b2' }, { '2c1' } }
+--- <
 MiniAlign.as_parts = function(arr2d)
   local ok, msg = H.can_be_parts(arr2d)
   if not ok then H.error('Input of `as_parts()` ' .. msg) end
@@ -1004,7 +1009,7 @@ end
 --- options supplied at execution. This design is mostly because their output
 --- can be used several times in pre-steps.
 ---
----@usage >
+---@usage >lua
 ---   local align = require('mini.align')
 ---   align.setup({
 ---     modifiers = {
@@ -1022,6 +1027,7 @@ end
 ---       pre_justify = { align.gen_step.filter('n == 1') },
 ---     },
 ---   })
+--- <
 MiniAlign.gen_step = {}
 
 --- Generate default split step
@@ -1846,7 +1852,7 @@ end
 
 -- Predicates -----------------------------------------------------------------
 H.is_array_of = function(x, predicate)
-  if not vim.tbl_islist(x) then return false end
+  if not H.islist(x) then return false end
   for _, v in ipairs(x) do
     if not predicate(v) then return false end
   end
@@ -2026,5 +2032,8 @@ H.undo = function()
     vim.cmd('silent! lockmarks normal! u')
   end
 end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
 
 return MiniAlign

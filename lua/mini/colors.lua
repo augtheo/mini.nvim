@@ -105,11 +105,11 @@
 --- All following code snippets assume to be executed inside interactive buffer
 --- (|MiniColors.interactively()|). They are directly copy-pasteable.
 ---
---- To apply single method to current color scheme, use >
+--- To apply single method to current color scheme, use >vim
 ---   :lua MiniColors.get_colorscheme():<method goes here>:apply().
----
+--- <
 --- Recipes:
---- - Tweak lightness: >
+--- - Tweak lightness: >lua
 ---
 ---   -- Invert dark/light color scheme to be light/dark
 ---   chan_invert('lightness', { gamut_clip = 'cusp' })
@@ -117,8 +117,8 @@
 ---   -- Ensure constant contrast ratio
 ---   chan_set('lightness', 15, { filter = 'bg' })
 ---   chan_set('lightness', 85, { filter = 'fg' })
----
---- - Tweak saturation: >
+--- <
+--- - Tweak saturation: >lua
 ---
 ---   -- Make background colors less saturated and foreground - more
 ---   chan_add('saturation', -20, { filter = 'bg' })
@@ -126,16 +126,16 @@
 ---
 ---   -- Convert to grayscale
 ---   chan_set('saturation', 0)
----
---- - Tweak hue: >
+--- <
+--- - Tweak hue: >lua
 ---
 ---   -- Create monochromatic variant (this uses green color)
 ---   chan_set('hue', 135)
 ---
 ---   -- Create dichromatic variant (this uses Neovim-themed hues)
 ---   chan_set('hue', { 140, 245 })
----
---- - Tweak temperature: >
+--- <
+--- - Tweak temperature: >lua
 ---
 ---   -- Invert temperature (make cold theme become warm and vice versa)
 ---   chan_invert('temperature')
@@ -143,22 +143,22 @@
 ---   -- Make background colors colder and foreground warmer
 ---   chan_add('temperature', -40, { filter = 'bg' })
 ---   chan_add('temperature', 40,  { filter = 'fg' })
----
+--- <
 --- - Counter color vision deficiency (try combinations of these to see which
 ---   one works best for you):
 ---
----     - Improve text saturation contrast (usually the best starting approach): >
+---     - Improve text saturation contrast (usually the best starting approach): >lua
 ---
 ---       chan_set('saturation', { 10, 90 }, { filter = 'fg' })
 --- <
 ---     - Remove certain hues from all colors (use 30 for red, 90 for yellow,
----       135 for green, 270 for blue): >
+---       135 for green, 270 for blue): >lua
 ---
 ---       -- Repel red color
 ---       chan_repel('hue', 30, 45)
 --- <
 ---     - Force equally spaced palette (remove ones with which you know you
----       have trouble): >
+---       have trouble): >lua
 ---
 ---       -- Might be a good choice for red-green color blindness
 ---       chan_set('hue', { 90, 180, 270})
@@ -166,12 +166,12 @@
 ---       -- Might be a good choice for blue-yellow color blindness
 ---       chan_set('hue', { 0, 90, 180 })
 --- <
----     - Inverting temperature or pressure can sometimes improve readability: >
+---     - Inverting temperature or pressure can sometimes improve readability: >lua
 ---
 ---       chan_invert('temperature')
 ---       chan_invert('pressure')
 --- <
----     - If all hope is lost, hue random generation might help if you are lucky: >
+---     - If all hope is lost, hue random generation might help if you are lucky: >lua
 ---
 ---       chan_modify('hue', function() return math.random(0, 359) end)
 --- <
@@ -336,7 +336,7 @@
 --- Colorscheme object is a central structure of this module. It contains all
 --- data relevant to colors in fields and provides methods to modify it.
 ---
---- Create colorscheme object manually with |MiniColors.as_colorscheme()|: >
+--- Create colorscheme object manually with |MiniColors.as_colorscheme()|: >lua
 ---
 ---   MiniColors.as_colorscheme({
 ---     name = 'my_cs',
@@ -346,16 +346,16 @@
 ---     },
 ---     terminal = { [0] = '#222222', [1] = '#dd2222' },
 ---   })
----
+--- <
 --- Get any registered color scheme (including currently active) as colorscheme
---- object with |MiniColors.get_colorscheme()|: >
+--- object with |MiniColors.get_colorscheme()|: >lua
 ---
 ---   -- Get current color scheme
 ---   MiniColors.get_colorscheme()
 ---
 ---   -- Get registered color scheme by name
 ---   MiniColors.get_colorscheme('minischeme', { new_name = 'maxischeme' })
----
+--- <
 ---@class Colorscheme
 ---
 ---                                                  *MiniColors-colorscheme-fields*
@@ -378,7 +378,7 @@
 --- - They accept `self` colorscheme object as first argument meaning they should be
 ---   called with `:` notation (like `cs:method()`).
 ---
---- Example calling methods: >
+--- Example calling methods: >lua
 ---
 ---   -- Get current color scheme, set hue of colors to 135, infer cterm
 ---   -- attributes and apply
@@ -490,14 +490,14 @@
 ---   `[source - coef; source + coef]` range are computed to completely collapse it
 ---   into `source`.
 ---
---- Examples: >
+--- Examples: >lua
 ---
 ---   -- Repel hue from red color removing hue in range from 20 to 40
 ---   chan_repel('hue', 30, 10)
 ---
 ---   -- Attract hue to red color collapsing [20; 40] range into 30.
 ---   chan_repel('hue', 30, -10)
----
+--- <
 --- Parameters ~
 --- {channel} __colors_channel
 --- {sources} `(table|number)` Single or multiple source from which to repel.
@@ -524,7 +524,7 @@
 ---       string of the form `terminal_color_x` for terminal color (as in
 ---       |terminal-config|).
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   -- Set to '#dd2222' all foreground colors for groups starting with "N"
 ---   color_modify(function(hex, data)
@@ -533,7 +533,7 @@
 ---     end
 ---     return hex
 ---   end)
----
+--- <
 --- Parameters ~
 --- {f} `(function)` Callable returning new color value.
 ---
@@ -634,7 +634,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniColors.config|.
 ---
----@usage `require('mini.colors').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.colors').setup() -- use default config
+---   -- OR
+---   require('mini.colors').setup({}) -- replace {} with your config table
+--- <
 MiniColors.setup = function(config)
   -- Export module
   _G.MiniColors = MiniColors
@@ -645,11 +649,8 @@ MiniColors.setup = function(config)
   -- Apply config
   H.apply_config(config)
 
-  -- Create user command
-  vim.api.nvim_create_user_command('Colorscheme', function(input)
-    local cs_array = vim.tbl_map(MiniColors.get_colorscheme, input.fargs)
-    MiniColors.animate(cs_array)
-  end, { nargs = '+', complete = 'color' })
+  -- Create user commands
+  H.create_user_commands()
 end
 
 --- Module config
@@ -784,13 +785,13 @@ end
 ---       `add_transparency()`.
 ---     - Source buffer content as plain Lua code.
 ---
---- Example of interactive buffer content: >
+--- Example of interactive buffer content: >lua
 ---
 ---   chan_modify('hue', function() return math.random(0, 359) end)
 ---   simulate_cvd('protan')
 ---   add_cterm_attributes()
 ---   add_terminal_colors()
----
+--- <
 ---@param opts table|nil Options. Possible fields:
 ---   - <colorscheme> `(table|nil)` - |MiniColors-colorscheme| object to be
 ---     used as initial colorscheme for executed code. By default uses current
@@ -896,7 +897,7 @@ end
 ---   - <show_duration> `(number)` - number of milliseconds to show intermediate
 ---     color schemes (all but last in `cs_array`). Default: 1000.
 MiniColors.animate = function(cs_array, opts)
-  if not (vim.tbl_islist(cs_array) and H.all(cs_array, H.is_colorscheme)) then
+  if not (H.islist(cs_array) and H.all(cs_array, H.is_colorscheme)) then
     H.error('Argument `cs_array` should be an array of color schemes.')
   end
   opts = vim.tbl_deep_extend(
@@ -1080,7 +1081,7 @@ H.cusps = {
   {27.04,65.51},{26.92,65.40},{26.81,65.30},{26.66,65.16},{26.55,65.06},{26.45,64.96},{26.35,64.87},
 }
 
--- Matricies used to simulate color vision deficiency (CVD; color blindness).
+-- Matrices used to simulate color vision deficiency (CVD; color blindness).
 -- Each first-level entry describes CVD type; second-level - severity times 10.
 -- Source:
 -- https://www.inf.ufrgs.br/~oliveira/pubs_files/CVD_Simulation/CVD_Simulation.html
@@ -1150,6 +1151,14 @@ H.apply_config = function(config) MiniColors.config = config end
 
 H.get_config = function(config)
   return vim.tbl_deep_extend('force', MiniColors.config, vim.b.minicolors_config or {}, config or {})
+end
+
+H.create_user_commands = function()
+  local callback = function(input)
+    local cs_array = vim.tbl_map(MiniColors.get_colorscheme, input.fargs)
+    MiniColors.animate(cs_array)
+  end
+  vim.api.nvim_create_user_command('Colorscheme', callback, { nargs = '+', complete = 'color' })
 end
 
 -- Color scheme methods -------------------------------------------------------
@@ -1795,11 +1804,6 @@ H.convex_hl_group = function(from, to, coef)
     underdotted   = H.convex_discrete(from.underdotted,   to.underdotted,   coef),
     underdouble   = H.convex_discrete(from.underdouble,   to.underdouble,   coef),
     underline     = H.convex_discrete(from.underline,     to.underline,     coef),
-    -- Compatibility with Neovim=0.7
-    -- TODO: Remove when support for Neovim=0.7 is dropped
-    underdash     = H.convex_discrete(from.underdash,     to.underdash,     coef),
-    underdot      = H.convex_discrete(from.underdot,      to.underdot,      coef),
-    underlineline = H.convex_discrete(from.underlineline, to.underlineline, coef),
   }
 end
 
@@ -2403,5 +2407,8 @@ H.all = function(arr, predicate)
   end
   return true
 end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
 
 return MiniColors

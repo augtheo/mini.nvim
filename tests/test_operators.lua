@@ -121,6 +121,11 @@ T['setup()']['validates `config` argument'] = function()
   expect_config_error({ sort = { func = 'a' } }, 'sort.func', 'function')
 end
 
+T['setup()']['removes built-in LSP mappings'] = function()
+  eq(child.fn.maparg('gra'), '')
+  eq(child.fn.maparg('grn'), '')
+end
+
 T['evaluate()'] = new_set()
 
 T['evaluate()']['is present'] = function() eq(child.lua_get('type(MiniOperators.evaluate)'), 'function') end
@@ -1011,7 +1016,7 @@ T['Exchange']['does not have side effects'] = function()
   eq(child.fn.getreg('a'), 'r')
   eq(child.fn.getreg('b'), 's')
   eq(child.fn.getreg('"'), 't')
-  if child.fn.has('nvim-0.8') == 1 then eq(child.fn.maparg('<C-c>'), ':echo 1<CR>') end
+  eq(child.fn.maparg('<C-c>'), ':echo 1<CR>')
 end
 
 T['Exchange']['preserves visual marks'] = function()
@@ -1277,8 +1282,6 @@ T['Multiply']['works with multibyte characters'] = function()
 
   -- Linewise
   validate_edit({ 'ыыы', 'aaa', 'x' }, { 1, 0 }, { 'gmj' }, { 'ыыы', 'aaa', 'ыыы', 'aaa', 'x' }, { 3, 0 })
-
-  if child.fn.has('nvim-0.8') == 0 then MiniTest.skip('`virtcol2col()` is introduced in Neovim 0.8') end
 
   -- All four blockwise selections
   local validate_blockwise = function(init_cursor, keys)
@@ -1760,11 +1763,11 @@ T['Replace']['respects `config.replace.prefix`'] = function()
   child.api.nvim_del_keymap('n', 'grr')
   child.api.nvim_del_keymap('x', 'gr')
 
-  load_module({ replace = { prefix = 'cr' } })
+  load_module({ replace = { prefix = 'gR' } })
 
-  validate_edit1d('aa bb', 0, { 'yiw', 'w', 'criw' }, 'aa aa', 3)
-  validate_edit({ 'aa', 'bb' }, { 1, 0 }, { 'yy', 'j', 'crr' }, { 'aa', 'aa' }, { 2, 0 })
-  validate_edit1d('aa bb', 0, { 'yiw', 'w', 'viw', 'cr' }, 'aa aa', 3)
+  validate_edit1d('aa bb', 0, { 'yiw', 'w', 'gRiw' }, 'aa aa', 3)
+  validate_edit({ 'aa', 'bb' }, { 1, 0 }, { 'yy', 'j', 'gRR' }, { 'aa', 'aa' }, { 2, 0 })
+  validate_edit1d('aa bb', 0, { 'yiw', 'w', 'viw', 'gR' }, 'aa aa', 3)
 end
 
 T['Replace']['works with `make_mappings()`'] = function()
@@ -1773,11 +1776,11 @@ T['Replace']['works with `make_mappings()`'] = function()
   child.api.nvim_del_keymap('x', 'gr')
 
   load_module({ replace = { prefix = '' } })
-  make_mappings('replace', { textobject = 'cr', line = 'crr', selection = 'cr' })
+  make_mappings('replace', { textobject = 'gR', line = 'gRr', selection = 'gR' })
 
-  validate_edit1d('aa bb', 0, { 'yiw', 'w', 'criw' }, 'aa aa', 3)
-  validate_edit({ 'aa', 'bb' }, { 1, 0 }, { 'yy', 'j', 'crr' }, { 'aa', 'aa' }, { 2, 0 })
-  validate_edit1d('aa bb', 0, { 'yiw', 'w', 'viw', 'cr' }, 'aa aa', 3)
+  validate_edit1d('aa bb', 0, { 'yiw', 'w', 'gRiw' }, 'aa aa', 3)
+  validate_edit({ 'aa', 'bb' }, { 1, 0 }, { 'yy', 'j', 'gRr' }, { 'aa', 'aa' }, { 2, 0 })
+  validate_edit1d('aa bb', 0, { 'yiw', 'w', 'viw', 'gR' }, 'aa aa', 3)
 end
 
 T['Replace']['respects `selection=exclusive`'] = function()

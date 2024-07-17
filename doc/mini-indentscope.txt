@@ -41,7 +41,8 @@ See |MiniIndentscope.config| for available config settings.
 
 You can override runtime config settings locally to buffer inside
 `vim.b.miniindentscope_config` which should have same structure as
-`MiniIndentscope.config`. See |mini.nvim-buffer-local-config| for more details.
+`MiniIndentscope.config`. See |mini.nvim-buffer-local-config| for more
+details.
 
 # Comparisons ~
 
@@ -108,15 +109,18 @@ Parameters ~
 {config} `(table|nil)` Module config table. See |MiniIndentscope.config|.
 
 Usage ~
-`require('mini.indentscope').setup({})` (replace `{}` with your `config` table)
-
+>lua
+  require('mini.indentscope').setup() -- use default config
+  -- OR
+  require('mini.indentscope').setup({}) -- replace {} with your config table
+<
 ------------------------------------------------------------------------------
                                                         *MiniIndentscope.config*
                             `MiniIndentscope.config`
 Module config
 
 Default values:
->
+>lua
   MiniIndentscope.config = {
     -- Draw options
     draw = {
@@ -175,8 +179,8 @@ Default values:
   It also controls how empty lines are treated: they are included in scope
   only if followed by a border. Another way of looking at it is that indent
   of blank line is computed based on value of `border` option.
-  Here is an illustration of how `border` works in presence of empty lines:
->
+  Here is an illustration of how `border` works in presence of empty lines: >
+
                              |both|bottom|top|none|
   1|function foo()           | 0  |  0   | 0 | 0  |
   2|                         | 4  |  0   | 4 | 0  |
@@ -196,8 +200,8 @@ Default values:
   computation of scope. If `true`, reference indent is a minimum of
   reference line's indent and cursor column. In main example, here how
   scope's body range differs depending on cursor column and `indent_at_cursor`
-  value (assuming cursor is on line 3 and it is whole buffer):
->
+  value (assuming cursor is on line 3 and it is whole buffer): >
+
     Column\Option true|false
        1 and 2    2-5 | 2-4
      3 and more   2-4 | 2-4
@@ -317,9 +321,10 @@ further by supplying appropriate arguments.
 
 Examples ~
 - Don't use animation: `MiniIndentscope.gen_animation.none()`
-- Use quadratic "out" easing with total duration of 1000 ms:
-  `gen_animation.quadratic({ easing = 'out', duration = 1000, unit = 'total' })`
+- Use quadratic "out" easing with total duration of 1000 ms: >lua
 
+  gen_animation.quadratic({ easing = 'out', duration = 1000, unit = 'total' })
+<
 See also ~
 |MiniIndentscope-drawing| for more information about how drawing is done.
 

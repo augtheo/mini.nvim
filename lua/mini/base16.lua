@@ -47,7 +47,6 @@
 ---     - 'rcarriga/nvim-notify'
 ---     - 'rlane/pounce.nvim'
 ---     - 'romgrk/barbar.nvim'
----     - 'simrat39/symbols-outline.nvim'
 ---     - 'stevearc/aerial.nvim'
 ---     - 'williamboman/mason.nvim'
 ---
@@ -63,8 +62,8 @@
 --- This module doesn't have runtime options, so using `vim.b.minibase16_config`
 --- will have no effect here.
 ---
---- Example:
---- >
+--- Example: >lua
+---
 ---   require('mini.base16').setup({
 ---     palette = {
 ---       base00 = '#112641',
@@ -105,8 +104,8 @@
 --- Base16 colorschemes ~
 ---
 --- This module comes with several pre-built color schemes. All of them are a
---- |MiniBase16| theme created with faster version of the following Lua code:
---- >
+--- |MiniBase16| theme created with faster version of the following Lua code: >lua
+---
 ---   require('mini.base16').setup({ palette = palette, use_cterm = true })
 --- <
 --- Activate them as regular |colorscheme| (for example, `:colorscheme minischeme`).
@@ -114,20 +113,25 @@
 --- ## minischeme ~
 ---
 --- Blue and yellow main colors with high contrast and saturation palette.
---- Palettes are:
---- - For dark 'background':
----   `MiniBase16.mini_palette('#112641', '#e2e98f', 75)`
---- - For light 'background':
----   `MiniBase16.mini_palette('#e2e5ca', '#002a83', 75)`
+--- Palettes are: >lua
 ---
+---   -- For dark 'background':
+---   MiniBase16.mini_palette('#112641', '#e2e98f', 75)
+---
+---   -- For light 'background':
+---   MiniBase16.mini_palette('#e2e5ca', '#002a83', 75)
+--- <
 --- ## minicyan ~
 ---
 --- Cyan and grey main colors with moderate contrast and saturation palette.
---- Palettes are:
---- - For dark 'background':
----   `MiniBase16.mini_palette('#0A2A2A', '#D0D0D0', 50)`
---- - For light 'background':
----   `MiniBase16.mini_palette('#C0D2D2', '#262626', 80)`
+--- Palettes are: >lua
+---
+---   -- For dark 'background':
+---   MiniBase16.mini_palette('#0A2A2A', '#D0D0D0', 50)
+---
+---   -- For light 'background':
+---   MiniBase16.mini_palette('#C0D2D2', '#262626', 80)
+--- <
 ---@tag mini-base16-color-schemes
 ---@tag minischeme
 ---@tag minicyan
@@ -153,8 +157,10 @@ local H = {}
 ---
 ---@param config table Module config table. See |MiniBase16.config|.
 ---
----@usage `require('mini.base16').setup({})` (replace `{}` with your `config`
----   table; `config.palette` should be a table with colors)
+---@usage >lua
+---   require('mini.base16').setup({}) -- replace {} with your config table
+---                                    -- needs `palette` field present
+--- <
 MiniBase16.setup = function(config)
   -- Export module
   _G.MiniBase16 = MiniBase16
@@ -180,8 +186,8 @@ end
 --- - If plugin name (as listed in |mini.base16|) has entry, it is used.
 --- - Otherwise `config.plugins.default` is used.
 ---
---- Example which will load only "mini.nvim" integration:
---- >
+--- Example which will load only "mini.nvim" integration: >lua
+---
 ---   require('mini.base16').setup({
 ---     palette = require('mini.base16').mini_palette('#112641', '#e2e98f', 75),
 ---     plugins = {
@@ -189,6 +195,7 @@ end
 ---       ['echasnovski/mini.nvim'] = true,
 ---     }
 ---   })
+--- <
 MiniBase16.config = {
   -- Table with names from `base00` to `base0F` and values being strings of
   -- HEX colors with format "#RRGGBB". NOTE: this should be explicitly
@@ -256,8 +263,10 @@ MiniBase16.config = {
 ---
 ---@return table Table with base16 palette.
 ---
----@usage `local palette = require('mini.base16').mini_palette('#112641', '#e2e98f', 75)`
---- `require('mini.base16').setup({palette = palette})`
+---@usage >lua
+---   local p = require('mini.base16').mini_palette('#112641', '#e2e98f', 75)
+---   require('mini.base16').setup({ palette = p })
+--- <
 MiniBase16.mini_palette = function(background, foreground, accent_chroma)
   H.validate_hex(background, 'background')
   H.validate_hex(foreground, 'foreground')
@@ -569,12 +578,15 @@ H.apply_palette = function(palette, use_cterm)
   hi('TooLong',    {fg=p.base08, bg=nil, attr=nil,         sp=nil})
   hi('Underlined', {fg=nil,      bg=nil, attr='underline', sp=nil})
 
-  -- Git diff
-  hi('DiffAdded',   {fg=p.base0B, bg=p.base00, attr=nil, sp=nil})
-  hi('DiffFile',    {fg=p.base08, bg=p.base00, attr=nil, sp=nil})
-  hi('DiffLine',    {fg=p.base0D, bg=p.base00, attr=nil, sp=nil})
-  hi('DiffNewFile', {link='DiffAdded'})
-  hi('DiffRemoved', {link='DiffFile'})
+  -- Patch diff
+  hi('diffAdded',   {fg=p.base0B, bg=nil, attr=nil, sp=nil})
+  hi('diffChanged', {fg=p.base0E, bg=nil, attr=nil, sp=nil})
+  hi('diffFile',    {fg=p.base09, bg=nil, attr=nil, sp=nil})
+  hi('diffLine',    {fg=p.base0C, bg=nil, attr=nil, sp=nil})
+  hi('diffRemoved', {fg=p.base08, bg=nil, attr=nil, sp=nil})
+  hi('Added',       {fg=p.base0B, bg=nil, attr=nil, sp=nil})
+  hi('Changed',     {fg=p.base0E, bg=nil, attr=nil, sp=nil})
+  hi('Removed',     {fg=p.base08, bg=nil, attr=nil, sp=nil})
 
   -- Git commit
   hi('gitcommitBranch',        {fg=p.base09, bg=nil, attr='bold', sp=nil})
@@ -629,19 +641,17 @@ H.apply_palette = function(palette, use_cterm)
   hi('LspCodeLensSeparator', {link='Comment'})
 
   -- Tree-sitter
-  if vim.fn.has('nvim-0.8') == 1 then
-    -- Sources:
-    -- - `:h treesitter-highlight-groups`
-    -- - https://github.com/nvim-treesitter/nvim-treesitter/blob/master/CONTRIBUTING.md#highlights
-    -- Included only those differing from default links
-    hi('@keyword.return', {fg=p.base08, bg=nil, attr=nil, sp=nil})
-    hi('@symbol',         {fg=p.base0E, bg=nil, attr=nil, sp=nil})
-    hi('@variable',       {fg=p.base05, bg=nil, attr=nil, sp=nil})
+  -- Sources:
+  -- - `:h treesitter-highlight-groups`
+  -- - https://github.com/nvim-treesitter/nvim-treesitter/blob/master/CONTRIBUTING.md#highlights
+  -- Included only those differing from default links
+  hi('@keyword.return', {fg=p.base08, bg=nil, attr=nil, sp=nil})
+  hi('@symbol',         {fg=p.base0E, bg=nil, attr=nil, sp=nil})
+  hi('@variable',       {fg=p.base05, bg=nil, attr=nil, sp=nil})
 
-    hi('@text.strong',   {fg=nil, bg=nil, attr='bold',          sp=nil})
-    hi('@text.emphasis', {fg=nil, bg=nil, attr='italic',        sp=nil})
-    hi('@text.strike',   {fg=nil, bg=nil, attr='strikethrough', sp=nil})
-  end
+  hi('@text.strong',   {fg=nil, bg=nil, attr='bold',          sp=nil})
+  hi('@text.emphasis', {fg=nil, bg=nil, attr='italic',        sp=nil})
+  hi('@text.strike',   {fg=nil, bg=nil, attr='strikethrough', sp=nil})
 
   -- Semantic tokens
   if vim.fn.has('nvim-0.9') == 1 then
@@ -651,6 +661,16 @@ H.apply_palette = function(palette, use_cterm)
 
     hi('@lsp.mod.defaultLibrary', {link='Special'})
     hi('@lsp.mod.deprecated',     {fg=p.base08, bg=nil, attr=nil, sp=nil})
+  end
+
+  -- New tree-sitter groups
+  if vim.fn.has('nvim-0.10') == 1 then
+    -- Source: `:h treesitter-highlight-groups`
+    -- Included only those differing from default links
+    hi('@markup.strong',        {link='@text.strong'})
+    hi('@markup.italic',        {link='@text.emphasis'})
+    hi('@markup.strikethrough', {link='@text.strikethrough'})
+    hi('@markup.underline',     {link='@text.underline'})
   end
 
   -- Plugins
@@ -672,6 +692,25 @@ H.apply_palette = function(palette, use_cterm)
     hi('MiniCursorword',        {fg=nil, bg=nil, attr='underline', sp=nil})
     hi('MiniCursorwordCurrent', {fg=nil, bg=nil, attr='underline', sp=nil})
 
+    hi('MiniDepsChangeAdded',   {link='diffAdded'})
+    hi('MiniDepsChangeRemoved', {link='diffRemoved'})
+    hi('MiniDepsHint',          {link='DiagnosticHint'})
+    hi('MiniDepsInfo',          {link='DiagnosticInfo'})
+    hi('MiniDepsMsgBreaking',   {link='DiagnosticWarn'})
+    hi('MiniDepsPlaceholder',   {link='Comment'})
+    hi('MiniDepsTitle',         {link='Title'})
+    hi('MiniDepsTitleError',    {link='DiffDelete'})
+    hi('MiniDepsTitleSame',     {link='DiffText'})
+    hi('MiniDepsTitleUpdate',   {link='DiffAdd'})
+
+    hi('MiniDiffSignAdd',     {fg=p.base0B, bg=p.base01, attr=nil, sp=nil})
+    hi('MiniDiffSignChange',  {fg=p.base0E, bg=p.base01, attr=nil, sp=nil})
+    hi('MiniDiffSignDelete',  {fg=p.base08, bg=p.base01, attr=nil, sp=nil})
+    hi('MiniDiffOverAdd',     {link='DiffAdd'})
+    hi('MiniDiffOverChange',  {link='DiffText'})
+    hi('MiniDiffOverContext', {link='DiffChange'})
+    hi('MiniDiffOverDelete',  {link='DiffDelete'})
+
     hi('MiniFilesBorder',         {link='NormalFloat'})
     hi('MiniFilesBorderModified', {link='DiagnosticFloatingWarn'})
     hi('MiniFilesCursorLine',     {fg=nil,      bg=p.base02, attr=nil,    sp=nil})
@@ -685,6 +724,16 @@ H.apply_palette = function(palette, use_cterm)
     hi('MiniHipatternsHack',  {fg=p.base00, bg=p.base0E, attr='bold', sp=nil})
     hi('MiniHipatternsNote',  {fg=p.base00, bg=p.base0D, attr='bold', sp=nil})
     hi('MiniHipatternsTodo',  {fg=p.base00, bg=p.base0C, attr='bold', sp=nil})
+
+    hi('MiniIconsAzure',  {fg=p.base0D, bg=nil, attr=nil, sp=nil})
+    hi('MiniIconsBlue',   {fg=p.base0F, bg=nil, attr=nil, sp=nil})
+    hi('MiniIconsCyan',   {fg=p.base0C, bg=nil, attr=nil, sp=nil})
+    hi('MiniIconsGreen',  {fg=p.base0B, bg=nil, attr=nil, sp=nil})
+    hi('MiniIconsGrey',   {fg=p.base07, bg=nil, attr=nil, sp=nil})
+    hi('MiniIconsOrange', {fg=p.base09, bg=nil, attr=nil, sp=nil})
+    hi('MiniIconsPurple', {fg=p.base0E, bg=nil, attr=nil, sp=nil})
+    hi('MiniIconsRed',    {fg=p.base08, bg=nil, attr=nil, sp=nil})
+    hi('MiniIconsYellow', {fg=p.base0A, bg=nil, attr=nil, sp=nil})
 
     hi('MiniIndentscopeSymbol',    {fg=p.base0F, bg=nil, attr=nil, sp=nil})
     hi('MiniIndentscopeSymbolOff', {fg=p.base08, bg=nil, attr=nil, sp=nil})
@@ -700,6 +749,10 @@ H.apply_palette = function(palette, use_cterm)
     hi('MiniMapSymbolCount', {fg=p.base0C, bg=nil,      attr=nil, sp=nil})
     hi('MiniMapSymbolLine',  {fg=p.base0D, bg=nil,      attr=nil, sp=nil})
     hi('MiniMapSymbolView',  {fg=p.base0F, bg=nil,      attr=nil, sp=nil})
+
+    hi('MiniNotifyBorder', {link='NormalFloat'})
+    hi('MiniNotifyNormal', {link='NormalFloat'})
+    hi('MiniNotifyTitle',  {link='FloatTitle'})
 
     hi('MiniOperatorsExchangeFrom', {link='IncSearch'})
 
@@ -824,10 +877,9 @@ H.apply_palette = function(palette, use_cterm)
   end
 
   if H.has_integration('ggandor/leap.nvim') then
-    hi('LeapMatch',          {fg=p.base0E, bg=nil, attr='bold,nocombine', sp=nil})
-    hi('LeapLabelPrimary',   {fg=p.base08, bg=nil, attr='bold,nocombine', sp=nil})
-    hi('LeapLabelSecondary', {fg=p.base05, bg=nil, attr='bold,nocombine', sp=nil})
-    hi('LeapLabelSelected',  {fg=p.base09, bg=nil, attr='bold,nocombine', sp=nil})
+    hi('LeapMatch',          {fg=p.base0E, bg=nil, attr='bold,nocombine,underline', sp=nil})
+    hi('LeapLabel',          {fg=p.base08, bg=nil, attr='bold,nocombine',           sp=nil})
+    hi('LeapLabelSelected',  {fg=p.base09, bg=nil, attr='bold,nocombine',           sp=nil})
     hi('LeapBackdrop',       {link='Comment'})
   end
 
@@ -979,23 +1031,9 @@ H.apply_palette = function(palette, use_cterm)
   end
 
   if H.has_integration('neoclide/coc.nvim') then
-    hi('CocErrorHighlight',   {link='DiagnosticError'})
-    hi('CocHintHighlight',    {link='DiagnosticHint'})
-    hi('CocInfoHighlight',    {link='DiagnosticInfo'})
-    hi('CocWarningHighlight', {link='DiagnosticWarn'})
-
-    hi('CocErrorFloat',   {link='DiagnosticFloatingError'})
-    hi('CocHintFloat',    {link='DiagnosticFloatingHint'})
-    hi('CocInfoFloat',    {link='DiagnosticFloatingInfo'})
-    hi('CocWarningFloat', {link='DiagnosticFloatingWarn'})
-
-    hi('CocErrorSign',   {link='DiagnosticSignError'})
-    hi('CocHintSign',    {link='DiagnosticSignHint'})
-    hi('CocInfoSign',    {link='DiagnosticSignInfo'})
-    hi('CocWarningSign', {link='DiagnosticSignWarn'})
-
     hi('CocCodeLens',             {link='LspCodeLens'})
     hi('CocDisabled',             {link='Comment'})
+    hi('CocFadeOut',              {link='Comment'})
     hi('CocMarkdownLink',         {fg=p.base0F, bg=nil,      attr=nil, sp=nil})
     hi('CocMenuSel',              {fg=nil,      bg=p.base02, attr=nil, sp=nil})
     hi('CocNotificationProgress', {link='CocMarkdownLink'})
@@ -1144,9 +1182,6 @@ H.apply_palette = function(palette, use_cterm)
     hi('BufferVisibleSign',   {link='BufferVisible'})
     hi('BufferVisibleTarget', {fg=p.base0E, bg=p.base01, attr='bold', sp=nil})
   end
-
-  -- simrat39/symbols-outline.nvim
-  -- Everything works correctly out of the box
 
   -- stevearc/aerial.nvim
   -- Everything works correctly out of the box

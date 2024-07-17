@@ -47,7 +47,16 @@ Test for `@signature` and `@tag`
 
                                 `fun`({x}, {y})
 
-
+------------------------------------------------------------------------------
+Test for smart empty line append
+Some text
+  
+------------------------------------------------------------------------------
+                                                                 *important-tag*
+Test for smart empty line before tag
+>lua
+  -- This is code block
+<
 ------------------------------------------------------------------------------
 Test for `@text`
 
@@ -58,7 +67,6 @@ This illustrates some code:
 >
   require('mini.doc').setup()
 <
-
 
 ==============================================================================
 ------------------------------------------------------------------------------
@@ -97,7 +105,7 @@ This string is evaluated using local variable. 1 + 1 = 2
                                                                          *M.tab*
                                     `M.tab`
 Usage of `MiniDoc.afterlines_to_code()` and `MiniDoc.current.eval_section`
->
+>lua
   M.tab = {
     -- Some functional setting
         a = <function; should be padded>,
@@ -110,7 +118,6 @@ Usage of `MiniDoc.afterlines_to_code()` and `MiniDoc.current.eval_section`
     
   }
 <
-
 
 ==============================================================================
 ------------------------------------------------------------------------------

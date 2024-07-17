@@ -59,28 +59,31 @@ Parameters ~
 {config} `(table|nil)` Module config table. See |MiniComment.config|.
 
 Usage ~
-`require('mini.comment').setup({})` (replace `{}` with your `config` table)
-
+>lua
+  require('mini.comment').setup() -- use default config
+  -- OR
+  require('mini.comment').setup({}) -- replace {} with your config table
+<
 ------------------------------------------------------------------------------
                                                             *MiniComment.config*
                               `MiniComment.config`
 Module config
 
 Default values:
->
+>lua
   MiniComment.config = {
     -- Options which control module behavior
     options = {
       -- Function to compute custom 'commentstring' (optional)
       custom_commentstring = nil,
 
-      -- Whether to ignore blank lines
+      -- Whether to ignore blank lines when commenting
       ignore_blank_line = false,
 
       -- Whether to recognize as comment only lines without indent
       start_of_line = false,
 
-      -- Whether to ensure single space pad for comment parts
+      -- Whether to force single space inner padding for comment parts
       pad_comment_parts = true,
     },
 
@@ -97,6 +100,7 @@ Default values:
       comment_visual = 'gc',
 
       -- Define 'comment' textobject (like `dgc` - delete whole comment block)
+      -- Works also in Visual mode if mapping differs from `comment_visual`
       textobject = 'gc',
     },
 
@@ -125,13 +129,28 @@ Its output should be a valid 'commentstring' (string containing `%s`).
 If not set or the output is `nil`, |MiniComment.get_commentstring()| is used.
 
 For example, this option can be used to always use buffer 'commentstring'
-even in case of present active tree-sitter parser: >
+even in case of present active tree-sitter parser: >lua
 
   require('mini.comment').setup({
     options = {
       custom_commentstring = function() return vim.bo.commentstring end,
     }
   })
+<
+# Hooks ~
+
+`hooks.pre` and `hooks.post` functions are executed before and after successful
+commenting action (toggle or computing textobject). They will be called
+with a single table argument which has the following fields:
+- <action> `(string)` - action name. One of "toggle" (when actual toggle
+  direction is yet unknown), "comment", "uncomment", "textobject".
+- <line_start> `(number|nil)` - action start line. Can be absent if yet unknown.
+- <line_end> `(number|nil)` - action end line. Can be absent if yet unknown.
+- <ref_position> `(table|nil)` - reference position.
+
+Notes:
+- Changing 'commentstring' in `hooks.pre` is allowed and will take effect.
+- If hook returns `false`, any further action is terminated.
 
 ------------------------------------------------------------------------------
                                                         *MiniComment.operator()*
@@ -163,17 +182,12 @@ otherwise. It respects indentation and doesn't insert trailing
 whitespace. Toggle commenting not in visual mode is also dot-repeatable
 and respects |count|.
 
-Before successful commenting it executes `config.hooks.pre`.
-After successful commenting it executes `config.hooks.post`.
-If hook returns `false`, any further action is terminated.
-
 # Notes ~
 
 - Comment structure is inferred from buffer's 'commentstring' option or
   local language of tree-sitter parser (if active; only on Neovim>=0.9).
 
-- Currently call to this function will remove marks inside written range.
-  Use |lockmarks| to preserve marks.
+- Call to this function will remove all |extmarks| from target range.
 
 Parameters ~
 {line_start} `(number)` Start line number (inclusive from 1 to number of lines).
@@ -190,10 +204,6 @@ Select comment textobject
 
 This selects all commented lines adjacent to cursor line (if it itself is
 commented). Designed to be used with operator mode mappings (see |mapmode-o|).
-
-Before successful selection it executes `config.hooks.pre`.
-After successful selection it executes `config.hooks.post`.
-If hook returns `false`, any further action is terminated.
 
 ------------------------------------------------------------------------------
                                                *MiniComment.get_commentstring()*

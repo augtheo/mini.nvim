@@ -311,6 +311,7 @@ T['detected']['is present'] = function()
 end
 
 T['detected']['is an empty table if no sessions are detected'] = function()
+  reload_module({ directory = 'global' })
   eq(child.lua_get('MiniSessions.detected'), {})
 end
 
@@ -325,7 +326,8 @@ end
 T['read()']['works with no detected sessions'] = function()
   reload_module({ directory = '', file = '' })
   eq(child.lua_get('MiniSessions.detected'), {})
-  expect.error(function() child.lua('MiniSessions.read()') end, '%(mini%.sessions%) There is no detected sessions')
+  expect.no_error(function() child.lua('MiniSessions.read()') end)
+  expect.match(get_latest_message(), '%(mini%.sessions%) There is no detected sessions')
 end
 
 T['read()']['accepts only name of detected session'] = function()
@@ -1002,22 +1004,26 @@ end
 
 T['Autoreading sessions']['does not autoread if Neovim started to show something'] = function()
   local init_autoread = 'tests/dir-sessions/init-files/autoread.lua'
+  local validate = function(...)
+    child.restart({ '-u', init_autoread, ... })
+    validate_no_session_loaded()
+  end
 
-  -- Current buffer has any lines (something opened explicitly)
-  child.restart({ '-u', init_autoread, '-c', [[call setline(1, 'a')]] })
-  validate_no_session_loaded()
+  -- There are files in arguments (like `nvim foo.txt` with new file).
+  validate('new-file.txt')
 
   -- Several buffers are listed (like session with placeholder buffers)
-  child.restart({ '-u', init_autoread, '-c', 'e foo | set buflisted | e bar | set buflisted' })
-  validate_no_session_loaded()
+  validate('-c', 'e foo | set buflisted | e bar | set buflisted')
 
   -- Unlisted buffers (like from `nvim-tree`) don't affect decision
   child.restart({ '-u', init_autoread, '-c', 'e foo | set nobuflisted | e bar | set buflisted' })
   validate_session_loaded('local/Session.vim')
 
-  -- There are files in arguments (like `nvim foo.txt` with new file).
-  child.restart({ '-u', init_autoread, 'new-file.txt' })
-  validate_no_session_loaded()
+  -- Current buffer is meant to show something else
+  validate('-c', 'set filetype=text')
+
+  -- Current buffer has any lines (something opened explicitly)
+  validate('-c', [[call setline(1, 'a')]])
 end
 
 T['Autowriting sessions'] = new_set()

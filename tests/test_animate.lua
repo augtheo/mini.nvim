@@ -1548,6 +1548,7 @@ T['Scroll']["respects 'virtualedit'"] = function()
 end
 
 T['Scroll']["respects 'scrolloff' in presence of folds"] = function()
+  if child.fn.has('nvim-0.10') == 0 then MiniTest.skip('Screenshots are generated for Neovim>=0.10') end
   set_cursor(6, 0)
   type_keys('zf5j')
   set_cursor(1, 0)
@@ -1655,7 +1656,7 @@ T['Scroll']['correctly places cursor in presence of tabs'] = function()
   validate(5, { 5, 0 })
 end
 
-T['Scroll']['can place intermideate cursor outside of line'] = function()
+T['Scroll']['can place intermediate cursor outside of line'] = function()
   set_lines({ 'aaaa', 'a', '', '', '', '', '', 'a', 'aaaa' })
   set_cursor(1, 3)
 
@@ -1670,7 +1671,7 @@ T['Scroll']['can place intermideate cursor outside of line'] = function()
   eq(get_virt_cursor(), { 9, 3 })
 end
 
-T['Scroll']['places cursor on edge lines if intermideate target is not visible'] = function()
+T['Scroll']['places cursor on edge lines if intermediate target is not visible'] = function()
   child.lua('MiniAnimate.config.scroll.subscroll = function(total_scroll) return { 1, total_scroll - 1 } end')
 
   local many_lines = { 'aaaa' }
@@ -1779,11 +1780,13 @@ T['Scroll']['works properly inside terminal'] = function()
   -- compared with what was at Terminal mode start
   local many_lines = string.rep([[a\n]], 20)
   type_keys(10, 'i', 'echo -e "' .. many_lines .. '"', '<CR>')
+  sleep(step_time)
 
   -- There should not be any scroll animation after exiting Terminal mode
+  local init_line = child.fn.line('w0')
   type_keys([[<C-\>]], '<C-n>')
-  sleep(step_time)
-  eq(child.fn.line('w0'), 18)
+  sleep(2 * step_time)
+  eq(child.fn.line('w0'), init_line)
 end
 
 T['Scroll']['does not automatically animate after buffer change'] = function()

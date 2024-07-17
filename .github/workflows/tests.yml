@@ -15,12 +15,18 @@ concurrency:
 jobs:
   build:
     name: Run tests
-    runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        neovim_version: ['v0.7.2', 'v0.8.3', 'v0.9.4', 'nightly']
+        os: [ubuntu-latest]
+        neovim_version: ['v0.8.3', 'v0.9.5', 'v0.10.0', 'nightly']
+        # include:
+        # - os: macos-latest
+        #   neovim_version: v0.10.0
+        # - os: windows-latest
+        #   neovim_version: v0.10.0
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4

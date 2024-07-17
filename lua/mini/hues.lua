@@ -63,7 +63,6 @@
 ---     - 'rcarriga/nvim-notify'
 ---     - 'rlane/pounce.nvim'
 ---     - 'romgrk/barbar.nvim'
----     - 'simrat39/symbols-outline.nvim'
 ---     - 'stevearc/aerial.nvim'
 ---     - 'williamboman/mason.nvim'
 ---
@@ -128,9 +127,14 @@ local H = {}
 
 --- Module setup
 ---
----@usage
---- `require('mini.hues').setup({ background = '#11262d', foreground = '#c0c8cc' })`
---- (add/change input table as you like)
+---@usage >lua
+---   require('mini.hues').setup({
+---     -- Use config table as you like
+---     -- Needs both `background` and `foreground` fields present
+---     background = '#11262d',
+---     foreground = '#c0c8cc',
+---   })
+--- <
 MiniHues.setup = function(config)
   -- Export module
   _G.MiniHues = MiniHues
@@ -661,16 +665,16 @@ H.apply_colorscheme = function(config)
   hi('CursorLineNr',   { fg=p.accent,  bg=nil,       bold=true })
   hi('CursorLineSign', { fg=p.bg_mid2, bg=nil })
   hi('DiffAdd',        { fg=nil,       bg=p.green_bg })
-  hi('DiffChange',     { fg=nil,       bg=p.yellow_bg })
+  hi('DiffChange',     { fg=nil,       bg=p.cyan_bg })
   hi('DiffDelete',     { fg=nil,       bg=p.red_bg })
-  hi('DiffText',       { fg=nil,       bg=p.bg_mid2 })
+  hi('DiffText',       { fg=nil,       bg=p.yellow_bg })
   hi('Directory',      { fg=p.azure,   bg=nil })
   hi('EndOfBuffer',    { fg=p.bg_mid2, bg=nil })
   hi('ErrorMsg',       { fg=p.red,     bg=nil })
   hi('FloatBorder',    { fg=p.accent,  bg=p.bg_edge })
   hi('FloatTitle',     { fg=p.accent,  bg=p.bg_edge, bold = true })
   hi('FoldColumn',     { fg=p.bg_mid2, bg=nil })
-  hi('Folded',         { fg=p.fg_mid2, bg=p.bg_mid })
+  hi('Folded',         { fg=p.fg_mid2, bg=p.bg_edge })
   hi('IncSearch',      { fg=p.bg,      bg=p.yellow })
   hi('lCursor',        { fg=p.bg,      bg=p.fg })
   hi('LineNr',         { fg=p.bg_mid2, bg=nil })
@@ -694,7 +698,7 @@ H.apply_colorscheme = function(config)
   hi('PMenuSel',       { fg=p.bg,      bg=p.fg,      blend=0 })
   hi('PMenuThumb',     { fg=nil,       bg=p.bg_mid2 })
   hi('Question',       { fg=p.azure,   bg=nil })
-  hi('QuickFixLine',   { fg=nil,       bg=p.bg_mid })
+  hi('QuickFixLine',   { fg=nil,       bg=nil,       bold=true })
   hi('Search',         { fg=p.bg,      bg=p.accent })
   hi('SignColumn',     { fg=p.bg_mid2, bg=nil })
   hi('SpecialKey',     { fg=p.bg_mid2, bg=nil })
@@ -748,7 +752,7 @@ H.apply_colorscheme = function(config)
   hi('Special',        { fg=p.cyan,    bg=nil })
   hi('SpecialChar',    { link='Special' })
   hi('SpecialComment', { link='Special' })
-  hi('Statement',      { fg=nil,       bg=nil,         bold=true })
+  hi('Statement',      { fg=p.fg,      bg=nil,         bold=true })
   hi('StorageClass',   { link='Type' })
   hi('String',         { fg=p.green,   bg=nil })
   hi('Structure',      { link='Type' })
@@ -758,16 +762,19 @@ H.apply_colorscheme = function(config)
   hi('Typedef',        { link='Type' })
 
   -- Other community standard
-  hi('Bold',       { fg=nil,      bg=nil, bold=true })
-  hi('Italic',     { fg=nil,      bg=nil, italic=true })
-  hi('Underlined', { fg=nil,      bg=nil, underline=true })
+  hi('Bold',       { fg=nil, bg=nil, bold=true })
+  hi('Italic',     { fg=nil, bg=nil, italic=true })
+  hi('Underlined', { fg=nil, bg=nil, underline=true })
 
   -- Patch diff
-  hi('diffAdded',   { link='DiffAdd' })
-  hi('diffFile',    { fg=nil, bg=p.yellow_bg })
-  hi('diffLine',    { fg=nil, bg=p.blue_bg })
-  hi('diffNewFile', { link='DiffFile' })
-  hi('diffRemoved', { link='DiffDelete' })
+  hi('diffAdded',   { fg=p.green,  bg=nil })
+  hi('diffChanged', { fg=p.cyan,   bg=nil })
+  hi('diffFile',    { fg=p.yellow, bg=nil })
+  hi('diffLine',    { fg=p.blue,   bg=nil })
+  hi('diffRemoved', { fg=p.red,    bg=nil })
+  hi('Added',       { fg=p.green,  bg=nil })
+  hi('Changed',     { fg=p.cyan,   bg=nil })
+  hi('Removed',     { fg=p.red,    bg=nil })
 
   -- Git commit
   hi('gitcommitBranch',        { fg=p.orange, bg=nil, bold=true })
@@ -835,85 +842,84 @@ H.apply_colorscheme = function(config)
   hi('LspCodeLensSeparator', { link='Comment' })
 
   -- Tree-sitter
-  if vim.fn.has('nvim-0.8') == 1 then
-    -- Sources:
-    -- - `:h treesitter-highlight-groups`
-    -- - https://github.com/nvim-treesitter/nvim-treesitter/blob/master/CONTRIBUTING.md#highlights
-    hi('@text.literal',   { link='Comment' })
-    hi('@text.reference', { link='Identifier' })
-    hi('@text.title',     { link='Title' })
-    hi('@text.uri',       { link='Underlined' })
-    hi('@text.underline', { link='Underlined' })
-    hi('@text.todo',      { link='Todo' })
-    hi('@text.note',      { link='MoreMsg' })
-    hi('@text.warning',   { link='WarningMsg' })
-    hi('@text.danger',    { link='ErrorMsg' })
-    hi('@text.strong',    { fg=nil, bg=nil, bold=true          })
-    hi('@text.emphasis',  { fg=nil, bg=nil, italic=true        })
-    hi('@text.strike',    { fg=nil, bg=nil, strikethrough=true })
+  -- Sources:
+  -- - `:h treesitter-highlight-groups`
+  -- - https://github.com/nvim-treesitter/nvim-treesitter/blob/master/CONTRIBUTING.md#highlights
+  hi('@text.literal',   { link='Special' })
+  hi('@text.reference', { link='Identifier' })
+  hi('@text.title',     { link='Title' })
+  hi('@text.uri',       { link='Underlined' })
+  hi('@text.todo',      { link='Todo' })
+  hi('@text.note',      { link='MoreMsg' })
+  hi('@text.warning',   { link='WarningMsg' })
+  hi('@text.danger',    { link='ErrorMsg' })
+  hi('@text.strong',    { fg=nil, bg=nil, bold=true          })
+  hi('@text.emphasis',  { fg=nil, bg=nil, italic=true        })
+  hi('@text.strike',    { fg=nil, bg=nil, strikethrough=true })
+  hi('@text.underline', { link='Underlined' })
 
-    hi('@comment',     { link='Comment' })
-    hi('@punctuation', { link='Delimiter' })
+  hi('@comment',     { link='Comment' })
+  hi('@punctuation', { link='Delimiter' })
 
-    hi('@constant',          { link='Constant' })
-    hi('@constant.builtin',  { link='Special' })
-    hi('@constant.macro',    { link='Macro' })
-    hi('@define',            { link='Define' })
-    hi('@macro',             { link='Macro' })
-    hi('@string',            { link='String' })
-    hi('@string.escape',     { link='SpecialChar' })
-    hi('@string.special',    { link='SpecialChar' })
-    hi('@character',         { link='Character' })
-    hi('@character.special', { link='SpecialChar' })
-    hi('@number',            { link='Number' })
-    hi('@boolean',           { link='Boolean' })
-    hi('@float',             { link='Float' })
+  hi('@constant',          { link='Constant' })
+  hi('@constant.builtin',  { link='Special' })
+  hi('@constant.macro',    { link='Macro' })
+  hi('@define',            { link='Define' })
+  hi('@macro',             { link='Macro' })
+  hi('@string',            { link='String' })
+  hi('@string.escape',     { link='SpecialChar' })
+  hi('@string.special',    { link='SpecialChar' })
+  hi('@character',         { link='Character' })
+  hi('@character.special', { link='SpecialChar' })
+  hi('@number',            { link='Number' })
+  hi('@boolean',           { link='Boolean' })
+  hi('@float',             { link='Float' })
 
-    hi('@function',         { link='Function' })
-    hi('@function.call',    { link='Function' })
-    hi('@function.builtin', { link='Special' })
-    hi('@function.macro',   { link='Macro' })
-    hi('@parameter',        { fg=p.blue, bg=nil })
-    hi('@method',           { link='Function' })
-    hi('@method.call',      { link='Function' })
-    hi('@field',            { link='Identifier' })
-    hi('@property',         { link='Identifier' })
-    hi('@constructor',      { link='Special' })
+  hi('@function',         { link='Function' })
+  hi('@function.builtin', { link='Special' })
+  hi('@function.call',    { link='Function' })
+  hi('@function.macro',   { link='Macro' })
+  hi('@parameter',        { fg=p.blue, bg=nil })
+  hi('@method',           { link='Function' })
+  hi('@method.call',      { link='Function' })
+  hi('@field',            { link='Identifier' })
+  hi('@property',         { link='Identifier' })
+  hi('@constructor',      { link='Special' })
 
-    hi('@conditional',    { link='Conditional' })
-    hi('@repeat',         { link='Repeat' })
-    hi('@label',          { link='Label' })
-    hi('@operator',       { link='Operator' })
-    hi('@keyword',        { link='Keyword' })
-    hi('@keyword.return', { fg=p.orange, bg=nil, bold=true })
-    hi('@exception',      { link='Exception' })
+  hi('@conditional',    { link='Conditional' })
+  hi('@repeat',         { link='Repeat' })
+  hi('@label',          { link='Label' })
+  hi('@operator',       { link='Operator' })
+  hi('@keyword',        { link='Keyword' })
+  hi('@keyword.return', { fg=p.orange, bg=nil, bold=true })
+  hi('@exception',      { link='Exception' })
 
-    hi('@variable',         { fg=p.fg, bg=nil })
-    hi('@variable.builtin', { link='Special' })
-    hi('@type',             { link='Type' })
-    hi('@type.builtin',     { link='Special' })
-    hi('@type.definition',  { link='Typedef' })
-    hi('@storageclass',     { link='StorageClass' })
-    hi('@structure',        { link='Structure' })
-    hi('@namespace',        { link='Identifier' })
-    hi('@include',          { link='Include' })
-    hi('@preproc',          { link='PreProc' })
-    hi('@debug',            { link='Debug' })
-    hi('@tag',              { link='Tag' })
+  hi('@variable',         { fg=p.fg, bg=nil })
+  hi('@variable.builtin', { link='Special' })
+  hi('@type',             { link='Type' })
+  hi('@type.builtin',     { link='Special' })
+  hi('@type.definition',  { link='Typedef' })
+  hi('@storageclass',     { link='StorageClass' })
+  hi('@structure',        { link='Structure' })
+  hi('@namespace',        { link='Identifier' })
+  hi('@include',          { link='Include' })
+  hi('@preproc',          { link='PreProc' })
+  hi('@debug',            { link='Debug' })
+  hi('@tag',              { link='Tag' })
 
-    hi('@symbol',           { link='Keyword' })
-  end
+  hi('@symbol', { link='Keyword' })
+  hi('@none',   { link='Normal'})
 
   -- Semantic tokens
   if vim.fn.has('nvim-0.9') == 1 then
     -- Source: `:h lsp-semantic-highlight`
-    hi('@lsp.type.class',         { link='Structure' })
+    hi('@lsp.type.class',         { link='@structure' })
     hi('@lsp.type.decorator',     { link='@function' })
     hi('@lsp.type.enum',          { link='@type' })
     hi('@lsp.type.enumMember',    { link='@constant' })
     hi('@lsp.type.function',      { link='@function' })
-    hi('@lsp.type.interface',     { link='@lsp.type' })
-    hi('@lsp.type.macro',         { link='Macro' })
+    hi('@lsp.type.interface',     { link='@type' })
+    hi('@lsp.type.macro',         { link='@macro' })
     hi('@lsp.type.method',        { link='@method' })
     hi('@lsp.type.namespace',     { link='@namespace' })
     hi('@lsp.type.parameter',     { link='@parameter' })
@@ -921,11 +927,125 @@ H.apply_colorscheme = function(config)
     hi('@lsp.type.struct',        { link='@structure' })
     hi('@lsp.type.type',          { link='@type' })
     hi('@lsp.type.typeParameter', { link='@type.definition' })
-    -- - Use variant defined in tree-sitter
-    hi('@lsp.type.variable',      {})
+    hi('@lsp.type.variable',      { link='@variable' })
 
     hi('@lsp.mod.defaultLibrary', { link='Special' })
     hi('@lsp.mod.deprecated',     { fg=p.red, bg=nil })
+  end
+
+  -- New tree-sitter groups
+  if vim.fn.has('nvim-0.9') == 1 then
+    -- Sources:
+    -- - `:h treesitter-highlight-groups`
+    -- - https://github.com/nvim-treesitter/nvim-treesitter/commit/1ae9b0e4558fe7868f8cda2db65239cfb14836d0
+    -- NOTE: commented groups are the same as in Neovim<0.10 defined earlier
+
+    -- @variable
+    -- @variable.builtin
+    hi('@variable.parameter', { link='@parameter' })
+    hi('@variable.member',    { link='@field' })
+
+    -- @constant
+    -- @constant.builtin
+    -- @constant.macro
+
+    hi('@module',         { link='@namespace' })
+    hi('@module.builtin', { link='@variable.builtin' })
+    -- @label
+
+    -- @string
+    hi('@string.documentation',  { link='@string' })
+    hi('@string.regexp',         { link='SpecialChar' })
+    -- @string.escape
+    -- @string.special
+    hi('@string.special.symbol', { link='@constant' })
+    hi('@string.special.path',   { link='Directory' })
+    hi('@string.special.url',    { link='@markup.link.url' })
+
+    -- @character
+    -- @character.special
+
+    -- @boolean
+    -- @number
+    hi('@number.float', { link='@float' })
+
+    -- @type
+    -- @type.builtin
+    -- @type.definition
+    hi('@type.qualifier', { link='StorageClass' })
+
+    hi('@attribute', { link='Macro' })
+    -- @property
+
+    -- @function
+    -- @function.builtin
+    -- @function.call
+    -- @function.macro
+
+    hi('@function.method',      { link='@method' })
+    hi('@function.method.call', { link='@method.call' })
+
+    -- @constructor
+    -- @operator
+
+    -- @keyword
+    hi('@keyword.coroutine', { link='@keyword' })
+    hi('@keyword.function',  { link='@keyword' })
+    hi('@keyword.operator',  { link='@keyword' })
+    hi('@keyword.import',    { fg=p.blue, bg=nil, bold=true })
+    hi('@keyword.storage',   { fg=p.fg,   bg=nil, bold=true })
+    hi('@keyword.repeat',    { link='@keyword' })
+    -- @keyword.return
+    hi('@keyword.debug',     { fg=p.cyan, bg=nil, bold=true })
+    hi('@keyword.exception', { link='@keyword' })
+
+    hi('@keyword.conditional',         { link='@keyword' })
+    hi('@keyword.conditional.ternary', { link='keyword' })
+
+    hi('@keyword.directive',        { fg=p.blue, bg=nil, bold=true })
+    hi('@keyword.directive.define', { link='@keyword.directive' })
+
+    hi('@punctuation.delimiter', { link='@punctuation' })
+    hi('@punctuation.bracket',   { link='@punctuation' })
+    hi('@punctuation.special',   { link='Special' })
+
+    -- @comment
+    hi('@comment.documentation', { link='@comment' })
+
+    hi('@comment.error',   { link='@text.danger' })
+    hi('@comment.warning', { link='@text.warning' })
+    hi('@comment.todo',    { link='@text.todo' })
+    hi('@comment.note',    { link='@text.note' })
+
+    hi('@markup.strong',        { link='@text.strong' })
+    hi('@markup.italic',        { link='@text.emphasis' })
+    hi('@markup.strikethrough', { link='@text.strikethrough' })
+    hi('@markup.underline',     { link='@text.underline' })
+
+    hi('@markup.heading', { link='@text.title' })
+
+    hi('@markup.quote',       { link='@string.special' })
+    hi('@markup.math',        { link='@string.special' })
+    hi('@markup.environment', { link='@module' })
+
+    hi('@markup.link',       { link='@text.reference' })
+    hi('@markup.link.label', { link='@markup.link' })
+    hi('@markup.link.url',   { fg=p.fg, bg=nil, underline=true })
+
+    hi('@markup.raw',       { link='@text.literal' })
+    hi('@markup.raw.block', { link='@markup.raw' })
+
+    hi('@markup.list',           { link='@punctuation.special' })
+    hi('@markup.list.checked',   { link='DiagnosticOk' })
+    hi('@markup.list.unchecked', { link='DiagnosticWarn' })
+
+    hi('@diff.plus',  { link='diffAdded' })
+    hi('@diff.minus', { link='diffRemoved' })
+    hi('@diff.delta', { link='diffChanged' })
+
+    -- @tag
+    hi('@tag.attribute', { link='@tag' })
+    hi('@tag.delimiter', { link='@punctuation' })
   end
 
   -- Plugins
@@ -947,6 +1067,25 @@ H.apply_colorscheme = function(config)
     hi('MiniCursorword',        { fg=nil, bg=nil, underline=true })
     hi('MiniCursorwordCurrent', { fg=nil, bg=nil, underline=true })
 
+    hi('MiniDepsChangeAdded',   { link='diffAdded' })
+    hi('MiniDepsChangeRemoved', { link='diffRemoved' })
+    hi('MiniDepsHint',          { link='DiagnosticHint' })
+    hi('MiniDepsInfo',          { link='DiagnosticInfo' })
+    hi('MiniDepsMsgBreaking',   { link='DiagnosticWarn' })
+    hi('MiniDepsPlaceholder',   { link='Comment' })
+    hi('MiniDepsTitle',         { link='Title' })
+    hi('MiniDepsTitleError',    { link='DiffDelete' })
+    hi('MiniDepsTitleSame',     { link='DiffText' })
+    hi('MiniDepsTitleUpdate',   { link='DiffAdd' })
+
+    hi('MiniDiffSignAdd',     { link='diffAdded' })
+    hi('MiniDiffSignChange',  { link='diffChanged' })
+    hi('MiniDiffSignDelete',  { link='diffRemoved' })
+    hi('MiniDiffOverAdd',     { link='DiffAdd' })
+    hi('MiniDiffOverChange',  { link='DiffText' })
+    hi('MiniDiffOverContext', { link='DiffChange' })
+    hi('MiniDiffOverDelete',  { link='DiffDelete' })
+
     hi('MiniFilesBorder',         { link='FloatBorder' })
     hi('MiniFilesBorderModified', { link='DiagnosticFloatingWarn' })
     hi('MiniFilesCursorLine',     { link='CursorLine' })
@@ -960,6 +1099,16 @@ H.apply_colorscheme = function(config)
     hi('MiniHipatternsHack',  { fg=p.bg, bg=p.yellow, bold=true})
     hi('MiniHipatternsNote',  { fg=p.bg, bg=p.cyan,   bold=true})
     hi('MiniHipatternsTodo',  { fg=p.bg, bg=p.blue,   bold=true})
+
+    hi('MiniIconsAzure',  { fg=p.azure,   bg=nil })
+    hi('MiniIconsBlue',   { fg=p.blue,    bg=nil })
+    hi('MiniIconsCyan',   { fg=p.cyan,    bg=nil })
+    hi('MiniIconsGreen',  { fg=p.green,   bg=nil })
+    hi('MiniIconsGrey',   { fg=p.fg_edge, bg=nil })
+    hi('MiniIconsOrange', { fg=p.orange,  bg=nil })
+    hi('MiniIconsPurple', { fg=p.purple,  bg=nil })
+    hi('MiniIconsRed',    { fg=p.red,     bg=nil })
+    hi('MiniIconsYellow', { fg=p.yellow,  bg=nil })
 
     hi('MiniIndentscopeSymbol',    { fg=p.accent, bg=nil })
     hi('MiniIndentscopeSymbolOff', { fg=p.red,    bg=nil })
@@ -975,6 +1124,10 @@ H.apply_colorscheme = function(config)
     hi('MiniMapSymbolCount', { fg=p.fg_mid2, bg=nil })
     hi('MiniMapSymbolLine',  { fg=p.accent,  bg=nil })
     hi('MiniMapSymbolView',  { fg=p.accent,  bg=nil })
+
+    hi('MiniNotifyBorder', { link='FloatBorder' })
+    hi('MiniNotifyNormal', { link='NormalFloat' })
+    hi('MiniNotifyTitle',  { link='FloatTitle'  })
 
     hi('MiniOperatorsExchangeFrom', { link='IncSearch' })
 
@@ -1100,9 +1253,8 @@ H.apply_colorscheme = function(config)
   end
 
   if has_integration('ggandor/leap.nvim') then
-    hi('LeapMatch',          { fg=p.green,  bg=nil, bold=true, nocombine=true })
-    hi('LeapLabelPrimary',   { fg=p.yellow, bg=nil, bold=true, nocombine=true })
-    hi('LeapLabelSecondary', { fg=p.fg,     bg=nil, bold=true, nocombine=true })
+    hi('LeapMatch',          { fg=p.green,  bg=nil, bold=true, nocombine=true, underline=true })
+    hi('LeapLabel',          { fg=p.yellow, bg=nil, bold=true, nocombine=true })
     hi('LeapLabelSelected',  { fg=p.cyan,   bg=nil, bold=true, nocombine=true })
     hi('LeapBackdrop',       { link='Comment' })
   end
@@ -1242,23 +1394,9 @@ H.apply_colorscheme = function(config)
   end
 
   if has_integration('neoclide/coc.nvim') then
-    hi('CocErrorHighlight',   { link='DiagnosticError' })
-    hi('CocHintHighlight',    { link='DiagnosticHint' })
-    hi('CocInfoHighlight',    { link='DiagnosticInfo' })
-    hi('CocWarningHighlight', { link='DiagnosticWarn' })
-
-    hi('CocErrorFloat',   { link='DiagnosticFloatingError' })
-    hi('CocHintFloat',    { link='DiagnosticFloatingHint' })
-    hi('CocInfoFloat',    { link='DiagnosticFloatingInfo' })
-    hi('CocWarningFloat', { link='DiagnosticFloatingWarn' })
-
-    hi('CocErrorSign',   { link='DiagnosticSignError' })
-    hi('CocHintSign',    { link='DiagnosticSignHint' })
-    hi('CocInfoSign',    { link='DiagnosticSignInfo' })
-    hi('CocWarningSign', { link='DiagnosticSignWarn' })
-
     hi('CocCodeLens',             { link='LspCodeLens' })
     hi('CocDisabled',             { link='Comment' })
+    hi('CocFadeOut',              { link='Comment' })
     hi('CocMarkdownLink',         { fg=p.blue,   bg=nil })
     hi('CocMenuSel',              { fg=nil,      bg=p.bg_mid2 })
     hi('CocNotificationProgress', { link='CocMarkdownLink' })
@@ -1407,9 +1545,6 @@ H.apply_colorscheme = function(config)
     hi('BufferVisibleSign',    { link='BufferVisible' })
     hi('BufferVisibleTarget',  { fg=p.fg,     bg=p.bg_mid2, bold=true })
   end
-
-  -- simrat39/symbols-outline.nvim
-  -- Everything works correctly out of the box
 
   -- stevearc/aerial.nvim
   -- Everything works correctly out of the box

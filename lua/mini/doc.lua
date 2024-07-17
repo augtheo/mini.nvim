@@ -144,7 +144,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniDoc.config|.
 ---
----@usage `require('mini.doc').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.doc').setup() -- use default config
+---   -- OR
+---   require('mini.doc').setup({}) -- replace {} with your config table
+--- <
 MiniDoc.setup = function(config)
   -- Export module
   _G.MiniDoc = MiniDoc
@@ -334,7 +338,7 @@ MiniDoc.config = {
       if not b:has_lines() then return end
 
       local found_param, found_field = false, false
-      local n_tag_sections = 0
+      local n_tag_sections, last_line = 0, nil
       H.apply_recursively(function(x)
         if not (type(x) == 'table' and x.type == 'section') then return end
 
@@ -353,11 +357,15 @@ MiniDoc.config = {
           x.parent:remove(x.parent_index)
           n_tag_sections = n_tag_sections + 1
           x.parent:insert(n_tag_sections, x)
+        elseif type(x[#x]) == 'string' then
+          last_line = x[#x]
         end
       end, b)
 
       b:insert(1, H.as_struct({ string.rep('-', 78) }, 'section'))
-      b:insert(H.as_struct({ '' }, 'section'))
+      -- Append empty line only if last line is not visibly blank (closing code
+      -- block with "<" is concealed)
+      if string.find(last_line, '^<?%s*$') == nil then b:insert(H.as_struct({ '' }, 'section')) end
     end,
     --minidoc_replace_end
 
@@ -603,14 +611,16 @@ end
 --- Convert afterlines to code
 ---
 --- This function is designed to be used together with `@eval` section to
---- automate documentation of certain values (notable default values of a
+--- automate documentation of certain values (notably default values of a
 --- table). It processes afterlines based on certain directives and makes
---- output looking like a code block.
+--- output look like a Lua code block.
 ---
---- Most common usage is by adding the following section in your annotation:
---- `@eval return MiniDoc.afterlines_to_code(MiniDoc.current.eval_section)`
+--- Most common usage is by adding the following section in your annotation: >
 ---
+---   ---@eval return MiniDoc.afterlines_to_code(MiniDoc.current.eval_section)
+--- <
 --- # Directives ~
+---
 --- Directives are special comments that are processed using Lua string pattern
 --- capabilities (so beware of false positives). Each directive should be put
 --- on its separate line. Supported directives:
@@ -622,8 +632,8 @@ end
 ---   Useful for manually changing what should be placed in output like in case
 ---   of replacing function body with something else.
 ---
---- Here is an example. Suppose having these afterlines:
---- >
+--- Here is an example. Suppose having these afterlines: >lua
+---
 ---   --minidoc_replace_start {
 ---   M.config = {
 ---     --minidoc_replace_end
@@ -638,9 +648,8 @@ end
 ---
 ---   return M
 --- <
+--- After adding `@eval` section those will be formatted as: >
 ---
---- After adding `@eval` section those will be formatted as:
---- >
 ---   {
 ---     param_one = 1,
 ---     param_fun = --<function>
@@ -650,7 +659,7 @@ end
 ---   converted to code.
 ---
 ---@return string|nil Single string (using `\n` to separate lines) describing
----   afterlines as code block in help file. If `nil`, input is not valid.
+---   afterlines as Lua code block in help file. If `nil`, input is not valid.
 MiniDoc.afterlines_to_code = function(struct)
   if not (type(struct) == 'table' and (struct.type == 'section' or struct.type == 'block')) then
     vim.notify('Input to `MiniDoc.afterlines_to_code()` should be either section or block.', vim.log.levels.WARN)
@@ -670,7 +679,7 @@ MiniDoc.afterlines_to_code = function(struct)
   -- Convert to a standalone code. NOTE: indent is needed because of how `>`
   -- and `<` work (any line starting in column 1 stops code block).
   src = H.ensure_indent(src, 2)
-  return '>\n' .. src .. '\n<'
+  return '>lua\n' .. src .. '\n<'
 end
 
 -- Helper data ================================================================
@@ -825,7 +834,7 @@ H.default_input = function()
     table.insert(res, files)
   end
 
-  return vim.tbl_flatten(res)
+  return H.tbl_flatten(res)
 end
 
 H.default_output = function()
@@ -1004,7 +1013,7 @@ H.toc_insert = function(s)
     toc_entry:clear_lines()
   end
 
-  for _, l in ipairs(vim.tbl_flatten(toc_lines)) do
+  for _, l in ipairs(H.tbl_flatten(toc_lines)) do
     s:insert(l)
   end
 end
@@ -1277,7 +1286,7 @@ H.collect_strings = function(x)
     end
   end, x)
   -- Flatten to only have strings and not table of strings (from `vim.split`)
-  return vim.tbl_flatten(res)
+  return H.tbl_flatten(res)
 end
 
 H.file_read = function(path)
@@ -1300,7 +1309,7 @@ end
 H.full_path = function(path) return vim.fn.resolve(vim.fn.fnamemodify(path, ':p')) end
 
 H.is_array_of = function(x, predicate)
-  if not vim.tbl_islist(x) then return false end
+  if not H.islist(x) then return false end
   for _, v in ipairs(x) do
     if not predicate(v) then return false end
   end
@@ -1308,5 +1317,10 @@ H.is_array_of = function(x, predicate)
 end
 
 H.is_string = function(x) return type(x) == 'string' end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
+H.tbl_flatten = vim.fn.has('nvim-0.10') == 1 and function(x) return vim.iter(x):flatten(math.huge):totable() end
+  or vim.tbl_flatten
 
 return MiniDoc

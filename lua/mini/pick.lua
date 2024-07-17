@@ -66,8 +66,8 @@
 ---
 --- Suggested dependencies (provide extra functionality, will work without them):
 ---
---- - Plugin 'nvim-tree/nvim-web-devicons' for filetype icons near the items
----   representing actual paths. If missing, default or no icons will be used.
+--- - Enabled |MiniIcons| module for icons near the items representing actual paths.
+---   Falls back to 'nvim-tree/nvim-web-devicons' plugin or no icons will be used.
 ---
 ---                                                             *MiniPick-cli-tools*
 --- - CLI tool(s) to power |MiniPick.builtin.files()|, |MiniPick.builtin.grep()|, and
@@ -168,8 +168,9 @@
 --- Bottom part of window border displays (in Neovim>=0.10) extra visual feedback:
 --- - Left part is a picker name.
 --- - Right part contains information in the format >
----   <current index in matches> | <match count> | <marked count> / <total count>
 ---
+---   <current index in matches> | <match count> | <marked count> / <total count>
+--- <
 --- When picker is busy (like if there are no items yet set or matching is active)
 --- window border changes color to be `MiniPickBorderBusy` after `config.delay.busy`
 --- milliseconds of idle time.
@@ -209,10 +210,10 @@
 --- - |vim.b.minipick_config| - has buffer-local effect.
 --- - `opts.source` in picker call - has effect for that particular call.
 ---
---- Example of source to choose from |arglist|: >
+--- Example of source to choose from |arglist|: >lua
+---
 ---   { items = vim.fn.argv, name = 'Arglist' }
 --- <
----
 --- Note: this is mostly useful for writing pickers. Can safely skip if you
 --- want to just use provided pickers.
 ---
@@ -232,11 +233,11 @@
 --- - String <text> field of table item is used (if present).
 --- - Use output of |vim.inspect()|.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   items = { 'aaa.txt', { text = 'bbb' }, function() return 'ccc' end }
 ---   -- corresponding stritems are { 'aaa.txt', 'bbb', 'ccc' }
----
+--- <
 --- Default value is `nil`, assuming it always be supplied by the caller.
 ---
 ---                                                   *MiniPick-source.items-common*
@@ -245,7 +246,8 @@
 --- |MiniPick.default_choose()|, |MiniPick.default_choose_marked()|:
 ---
 --- - Path (file or directory). Use string or `path` field of a table. Path can
----   be either absolute or relative to the `source.cwd`.
+---   be either absolute, relative to the `source.cwd`, or have a general URI format
+---   (only if supplied as table field).
 ---   Examples: `'aaa.txt'`, `{ path = 'aaa.txt' }`
 ---
 --- - Buffer. Use buffer id as number, string, or `bufnr` / `buf_id` / `buf`
@@ -253,26 +255,30 @@
 ---   Examples: `1`, `'1'`, `{ bufnr = 1 }`, `{ buf_id = 1 }`, `{ buf = 1 }`
 ---
 --- - Line in file or buffer. Use table representation with `lnum` field with line
----   number (starting from 1). Files can use string in "<path>:<line>" format.
----   Examples: >
----   { path = 'aaa.txt', lnum = 2 }, 'aaa.txt:2', { path = 'aaa.txt:2' },
----   { bufnr = 1, lnum = 3 }
+---   number (starting from 1) or string in "<path>\0<line>" format (`\0` is
+---   an actual null character; don't escape the slash; may need to be `\000`).
+---   Examples: >lua
 ---
+---     { path = 'aaa.txt', lnum = 2 }, 'aaa.txt\0002', { bufnr = 1, lnum = 3 }
+--- <
 --- - Position in file or buffer. Use table representation with `lnum` and `col`
----   fields with line and column numbers (starting from 1). Files can use string
----   in "<path>:<line>:<col>" format.
----   Examples: >
----   { path = 'aaa.txt', lnum = 2, col = 3 }, 'aaa.txt:2:3',
----   { path = 'aaa.txt:2:3' }, { bufnr = 1, lnum = 3, col = 4 }
+---   fields with line and column numbers (starting from 1) or string in
+---   "<path>\0<line>\0<col>" format (`\0` is an actual null character, don't
+---   escape the slash; may need to be `\000`).
+---   Examples: >lua
 ---
+---     { path = 'aaa.txt', lnum = 2, col = 3 }, 'aaa.txt\0' .. '2\0003',
+---     { bufnr = 1, lnum = 3, col = 4 }
+--- <
 --- - Region in file or buffer. Use table representation with `lnum`, `col`,
 ---   `end_lnum`, `end_col` fields for start and end line/column. All numbers
 ---   start from 1, end line is inclusive, end column is exclusive.
 ---   This naming is similar to |getqflist()| and |diagnostic-structure|.
----   Examples: >
----   { path = 'aaa.txt', lnum = 2, col = 3, end_lnum = 4, end_col = 5 },
----   { bufnr = 1, lnum = 3, col = 4, end_lnum = 5, end_col = 6 }
+---   Examples: >lua
 ---
+---     { path = 'aaa.txt', lnum = 2, col = 3, end_lnum = 4, end_col = 5 },
+---     { bufnr = 1, lnum = 3, col = 4, end_lnum = 5, end_col = 6 }
+--- <
 --- Note: all table items will benefit from having `text` field for better matching.
 ---
 ---                                                           *MiniPick-source.name*
@@ -297,7 +303,7 @@
 --- # Match ~
 ---
 --- `source.match` is a callable defining how stritems
---- (see |MiniPick-source.items-stritems|) are matched (filetered and sorted) based
+--- (see |MiniPick-source.items-stritems|) are matched (filtered and sorted) based
 --- on the query.
 ---
 --- It will be called with the following arguments:
@@ -329,16 +335,15 @@
 --- - Writing custom `source.match` usually means also changing |MiniPick-source.show|
 ---   because it is used to highlight stritems parts actually matching the query.
 ---
---- Example of simple "exact" `match()` preserving initial order: >
+--- Example of simple "exact" `match()` preserving initial order: >lua
 ---
 ---   local match_exact = function(stritems, inds, query)
 ---     local prompt_pattern = vim.pesc(table.concat(query))
 ---     local f = function(i) return stritems[i]:find(prompt_pattern) ~= nil end
 ---     return vim.tbl_filter(f, inds)
 ---   end
+---   -- For non-blocking version see `:h MiniPick.poke_is_picker_active()`
 --- <
----   For non-blocking version see |MiniPick.poke_is_picker_active()|.
----
 --- Default value is |MiniPick.default_match()|.
 ---
 ---                                                           *MiniPick-source.show*
@@ -357,13 +362,13 @@
 --- `options.content_from_bottom`). This also includes possible visualization
 --- of which parts of stritem actually matched query.
 ---
---- Example (assuming string items; without highlighting): >
+--- Example (assuming string items; without highlighting): >lua
 ---
 ---   local show_prepend = function(buf_id, items_arr, query)
 ---     local lines = vim.tbl_map(function(x) return 'Item: ' .. x end, items_arr)
 ---     vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
 ---   end
----
+--- <
 --- Default value is |MiniPick.default_show()|.
 ---
 ---                                                        *MiniPick-source.preview*
@@ -378,13 +383,13 @@
 ---
 --- It should update buffer `buf_id` to visually represent `item`.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local preview_inspect = function(buf_id, item)
 ---     local lines = vim.split(vim.inspect(item), '\n')
 ---     vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
 ---   end
----
+--- <
 --- Default value is |MiniPick.default_preview()|.
 ---
 ---                                                         *MiniPick-source.choose*
@@ -403,7 +408,7 @@
 --- - It is called when picker window is still current. Use `windows.target` value
 ---   from |MiniPick.get_picker_state()| output to do something with target window.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local choose_file_continue = function(item)
 ---     if vim.fn.filereadable(item) == 0 then return end
@@ -413,7 +418,7 @@
 ---     )
 ---     return true
 ---   end
----
+--- <
 --- Default value is |MiniPick.default_choose()|.
 ---
 ---                                                  *MiniPick-source.choose_marked*
@@ -434,10 +439,10 @@
 --- - It is called when picker window is still current. Use `windows.target` value
 ---   from |MiniPick.get_picker_state()| output to do something with target window.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local choose_marked_print = function(items) print(vim.inspect(items)) end
----
+--- <
 --- Default value is |MiniPick.default_choose_marked()|.
 ---@tag MiniPick-source
 
@@ -584,24 +589,27 @@
 --- with the following fields:
 --- - <char> `(string)` - single character acting as action trigger.
 --- - <func> `(function)` - callable to be executed without arguments after
----   user presses <char>.
+---   user presses <char>. Its return value is treated as "should stop picker
+---   after execution", i.e. returning nothing, `nil`, or `false` continues
+---   picker while everything else (prefer `true`) stops it.
 ---
---- Example of `execute` custom mapping: >
+--- Example of `execute` custom mapping: >lua
 ---
 ---   execute = {
 ---     char = '<C-e>',
 ---     func = function() vim.cmd(vim.fn.input('Execute: ')) end,
 ---   }
+--- <
 ---@tag MiniPick-actions
 
 --- Common configuration examples ~
 ---
---- - Disable icons in |MiniPick.builtin| pickers related to paths: >
+--- - Disable icons in |MiniPick.builtin| pickers related to paths: >lua
 ---
 ---   local pick = require('mini.pick')
 ---   pick.setup({ source = { show = pick.default_show } })
----
---- - Mappings to switch `toggle_{preview,info}` and `move_{up,down}`: >
+--- <
+--- - Mappings to switch `toggle_{preview,info}` and `move_{up,down}`: >lua
 ---
 ---   require('mini.pick').setup({
 ---     mappings = {
@@ -611,8 +619,8 @@
 ---       move_up        = '<S-Tab>',
 ---     }
 ---   })
----
---- - Different window styles: >
+--- <
+--- - Different window styles: >lua
 ---
 ---   -- Different border
 ---   { window = { config = { border = 'double' } } }
@@ -638,6 +646,7 @@
 ---     }
 ---   end
 ---   { window = { config = win_config } }
+--- <
 ---@tag MiniPick-examples
 
 ---@alias __pick_builtin_opts table|nil Options forwarded to |MiniPick.start()|.
@@ -660,14 +669,18 @@ local H = {}
 --- following (expanded, |expandcmd()|) |<f-args>| combined in a single table.
 --- To add custom pickers, update |MiniPick.registry|.
 ---
---- Example: >
+--- Example: >vim
 ---
 ---   :Pick files tool='git'
 ---   :Pick grep pattern='<cword>'
----
+--- <
 ---@param config table|nil Module config table. See |MiniPick.config|.
 ---
----@usage `require('mini.pick').setup({})` (replace `{}` with your `config` table).
+---@usage >lua
+---   require('mini.pick').setup() -- use default config
+---   -- OR
+---   require('mini.pick').setup({}) -- replace {} with your config table
+--- <
 MiniPick.setup = function(config)
   -- Export module
   _G.MiniPick = MiniPick
@@ -684,13 +697,15 @@ MiniPick.setup = function(config)
   -- Create default highlighting
   H.create_default_hl()
 
-  -- Create user command
-  vim.api.nvim_create_user_command('Pick', function(input)
-    local name, local_opts = H.command_parse_fargs(input.fargs)
-    local f = MiniPick.registry[name]
-    if f == nil then H.error(string.format('There is no picker named "%s" in registry.', name)) end
-    f(local_opts)
-  end, { nargs = '+', complete = H.command_complete, desc = "Pick from 'mini.pick' registry" })
+  -- Create user commands
+  H.create_user_commands()
+
+  -- Disable terminal emulator's pasting with active picker
+  local paste_orig = vim.paste
+  vim.paste = function(...)
+    if not MiniPick.is_picker_active() then return paste_orig(...) end
+    vim.notify('(mini.pick) Use `mappings.paste` (`<C-r>` by default) with "*" or "+" register.', vim.log.levels.HINT)
+  end
 end
 
 --stylua: ignore
@@ -871,7 +886,7 @@ MiniPick.start = function(opts)
   H.picker_set_busy(picker, true)
   local items = H.expand_callable(opts.source.items)
   -- - Set items on next event loop to not block when computing stritems
-  if vim.tbl_islist(items) then vim.schedule(function() MiniPick.set_picker_items(items) end) end
+  if H.islist(items) then vim.schedule(function() MiniPick.set_picker_items(items) end) end
 
   H.picker_track_lost_focus(picker)
   return H.picker_advance(picker)
@@ -952,10 +967,10 @@ end
 ---
 --- Having query `{ 'ab', 'c' }` is the same as "ab c" prompt.
 ---
---- You can have a feel of how this works with this command: >
+--- You can have a feel of how this works with this command: >lua
 ---
 ---   MiniPick.start({ source = { items = { '_abc', 'a_bc', 'ab_c', 'abc_' } } })
----
+--- <
 ---@param stritems table Array of all stritems.
 ---@param inds table Array of `stritems` indexes to match. All of them should point
 ---   at string elements of `stritems`. No check is done for performance reasons.
@@ -1005,10 +1020,11 @@ end
 ---@param opts table|nil Options. Possible fields:
 ---   - <show_icons> `(boolean)` - whether to show icons for entries recognized as
 ---     valid actually present paths on disk (see |MiniPick-source.items-common|),
----     empty space otherwise.
+---     empty space otherwise. Tries to use `text` field as fallback for path.
 ---     Default: `false`. Note: |MiniPick.builtin| pickers showing file/directory
 ---     paths use `true` by default.
----   - <icons> `(table)` - table with fallback icons. Can have fields:
+---   - <icons> `(table)` - table with fallback icons used if icon provider
+---     does not itself supply default icons for category. Can have fields:
 ---       - <directory> `(string)` - icon for directory. Default: " ".
 ---       - <file> `(string)` - icon for file. Default: " ".
 ---       - <none> `(string)` - icon for non-valid path. Default: "  ".
@@ -1016,14 +1032,15 @@ MiniPick.default_show = function(buf_id, items, query, opts)
   local default_icons = { directory = ' ', file = ' ', none = '  ' }
   opts = vim.tbl_deep_extend('force', { show_icons = false, icons = default_icons }, opts or {})
 
-  -- Compute and set lines
+  -- Compute and set lines. Compute prefix based on the whole items to allow
+  -- separate `text` and `path` table fields (preferring second one).
+  local get_prefix_data = opts.show_icons and function(item) return H.get_icon(item, opts.icons) end
+    or function() return { text = '' } end
+  local prefix_data = vim.tbl_map(get_prefix_data, items)
+
   local lines = vim.tbl_map(H.item_to_string, items)
   local tab_spaces = string.rep(' ', vim.o.tabstop)
-  lines = vim.tbl_map(function(l) return l:gsub('\n', ' '):gsub('\t', tab_spaces) end, lines)
-
-  local get_prefix_data = opts.show_icons and function(line) return H.get_icon(line, opts.icons) end
-    or function() return { text = '' } end
-  local prefix_data = vim.tbl_map(get_prefix_data, lines)
+  lines = vim.tbl_map(function(l) return l:gsub('%z', '│'):gsub('\n', ' '):gsub('\t', tab_spaces) end, lines)
 
   local lines_to_show = {}
   for i, l in ipairs(lines) do
@@ -1094,6 +1111,7 @@ MiniPick.default_preview = function(buf_id, item, opts)
   if item_data.type == 'file' then return H.preview_file(buf_id, item_data, opts) end
   if item_data.type == 'directory' then return H.preview_directory(buf_id, item_data) end
   if item_data.type == 'buffer' then return H.preview_buffer(buf_id, item_data, opts) end
+  if item_data.type == 'uri' then return H.preview_uri(buf_id, item_data, opts) end
   H.preview_inspect(buf_id, item)
 end
 
@@ -1115,7 +1133,9 @@ MiniPick.default_choose = function(item)
   if not H.is_valid_win(win_target) then win_target = H.get_first_valid_normal_window() end
 
   local item_data = H.parse_item(item)
-  if item_data.type == 'file' or item_data.type == 'directory' then return H.choose_path(win_target, item_data) end
+  if item_data.type == 'file' or item_data.type == 'directory' or item_data.type == 'uri' then
+    return H.choose_path(win_target, item_data)
+  end
   if item_data.type == 'buffer' then return H.choose_buffer(win_target, item_data) end
   H.choose_print(item)
 end
@@ -1134,7 +1154,7 @@ end
 ---   - <list_type> `(string)` - which type of list to open. One of "quickfix"
 ---     or "location". Default: "quickfix".
 MiniPick.default_choose_marked = function(items, opts)
-  if not vim.tbl_islist(items) then H.error('`items` should be an array') end
+  if not H.islist(items) then H.error('`items` should be an array') end
   if #items == 0 then return end
   opts = vim.tbl_deep_extend('force', { list_type = 'quickfix' }, opts or {})
 
@@ -1142,8 +1162,9 @@ MiniPick.default_choose_marked = function(items, opts)
   local list = {}
   for _, item in ipairs(items) do
     local item_data = H.parse_item(item)
-    if item_data.type == 'file' or item_data.type == 'buffer' then
-      local entry = { bufnr = item_data.buf_id, filename = item_data.path }
+    if item_data.type == 'file' or item_data.type == 'buffer' or item_data.type == 'uri' then
+      local is_uri, uri_path = pcall(vim.uri_to_fname, item_data.path)
+      local entry = { bufnr = item_data.buf_id, filename = is_uri and uri_path or item_data.path }
       entry.lnum, entry.col, entry.text = item_data.lnum or 1, item_data.col or 1, item_data.text or ''
       entry.end_lnum, entry.end_col = item_data.end_lnum, item_data.end_col
       table.insert(list, entry)
@@ -1206,12 +1227,12 @@ MiniPick.ui_select = function(items, opts, on_choice)
     local win_target = MiniPick.get_picker_state().windows.target
     if not H.is_valid_win(win_target) then win_target = H.get_first_valid_normal_window() end
     vim.api.nvim_win_call(win_target, function()
-      on_choice(item.item, item.index)
+      on_choice(items[item.index], item.index)
       MiniPick.set_picker_target_window(vim.api.nvim_get_current_win())
     end)
   end
 
-  local source = { items = items_ext, name = opts.kind or opts.prompt, preview = preview, choose = choose }
+  local source = { items = items_ext, name = opts.prompt or opts.kind, preview = preview, choose = choose }
   local item = MiniPick.start({ source = source })
   if item == nil and was_aborted then on_choice(nil) end
 end
@@ -1388,14 +1409,14 @@ end
 ---
 --- Notes:
 --- - There are not built-in mappings for buffer manipulation. Here is an example
----   of how to call this function with mapping to wipeout the current item: >
+---   of how to call this function with mapping to wipeout the current item: >lua
 ---
 ---   local wipeout_cur = function()
 ---     vim.api.nvim_buf_delete(MiniPick.get_picker_matches().current.bufnr, {})
 ---   end
 ---   local buffer_mappings = { wipeout = { char = '<C-d>', func = wipeout_cur } }
 ---   MiniPick.builtin.buffers(local_opts, { mappings = buffer_mappings })
----
+--- <
 ---@param local_opts __pick_builtin_local_opts
 ---   Possible fields:
 ---   - <include_current> `(boolean)` - whether to include current buffer in
@@ -1453,14 +1474,15 @@ MiniPick.builtin.resume = function()
   local picker = H.pickers.latest
   if picker == nil then H.error('There is no picker to resume.') end
 
+  H.cache = {}
   local buf_id = H.picker_new_buf()
   local win_target = vim.api.nvim_get_current_win()
   local win_id = H.picker_new_win(buf_id, picker.opts.window.config)
   picker.buffers = { main = buf_id }
   picker.windows = { main = win_id, target = win_target }
   picker.view_state = 'main'
+  H.pickers.active = picker
 
-  H.pickers.active, H.cache = picker, {}
   return H.picker_advance(picker)
 end
 
@@ -1471,7 +1493,7 @@ end
 ---
 --- Serves as a source for |:Pick| command.
 ---
---- Customization examples: >
+--- Customization examples: >lua
 ---
 ---   -- Adding custom picker to pick `register` entries
 ---   MiniPick.registry.registry = function()
@@ -1489,6 +1511,7 @@ end
 ---     local_opts.cwd = nil
 ---     return MiniPick.builtin.files(local_opts, opts)
 ---   end
+--- <
 MiniPick.registry = {}
 
 for name, f in pairs(MiniPick.builtin) do
@@ -1560,7 +1583,7 @@ MiniPick.get_picker_opts = function() return vim.deepcopy((H.pickers.active or {
 ---   - <windows> `(table)` - table with `main` and `target` fields representing
 ---     window identifiers for main and target windows.
 ---   - <caret> `(number)` - caret column.
----   - <is_bust> `(boolean)` - whether picker is busy with computations.
+---   - <is_busy> `(boolean)` - whether picker is busy with computations.
 ---
 ---@seealso |MiniPick.set_picker_target_window()|
 MiniPick.get_picker_state = function()
@@ -1593,7 +1616,7 @@ MiniPick.get_picker_query = function() return vim.deepcopy((H.pickers.active or 
 ---
 ---@seealso |MiniPick.get_picker_items()| and |MiniPick.get_picker_stritems()|
 MiniPick.set_picker_items = function(items, opts)
-  if not vim.tbl_islist(items) then H.error('`items` should be an array.') end
+  if not H.islist(items) then H.error('`items` should be an array.') end
   if not MiniPick.is_picker_active() then return end
   opts = vim.tbl_deep_extend('force', { do_match = true, querytick = nil }, opts or {})
 
@@ -1605,12 +1628,13 @@ end
 ---
 --- Asynchronously executes `command` and sets items to its postprocessed output.
 ---
---- Example: >
+--- Example: >lua
+---
 ---   local items = vim.schedule_wrap(function()
 ---     MiniPick.set_picker_items_from_cli({ 'echo', 'a\nb\nc' })
 ---   end)
 ---   MiniPick.start({ source = { items = items, name = 'Echo abc' } })
----
+--- <
 ---@param command table Array with (at least one) string command parts.
 ---@param opts table|nil Options. Possible fields:
 ---   - <postprocess> `(function)` - callable performing postprocessing of output.
@@ -1727,7 +1751,7 @@ MiniPick.is_picker_active = function() return H.pickers.active ~= nil end
 --- - If yes, return it after `coroutine.yield()` with `coroutine.resume()`
 ---   called "soon" by the main event-loop (see |vim.schedule()|).
 ---
---- Example of non-blocking exact `match` (as demo; can be optimized further): >
+--- Example of non-blocking exact `match` (as demo; can be optimized further): >lua
 ---
 ---   local match_nonblock = function(match_inds, stritems, query)
 ---     local prompt, querytick = table.concat(query), MiniPick.get_querytick()
@@ -1746,7 +1770,7 @@ MiniPick.is_picker_active = function() return H.pickers.active ~= nil end
 ---
 ---     coroutine.resume(coroutine.create(f))
 ---   end
----
+--- <
 ---@return boolean Whether there is an active picker.
 ---
 ---@seealso |MiniPick.is_picker_active()|
@@ -1891,6 +1915,17 @@ H.create_default_hl = function()
   hi('MiniPickPrompt',        { link = 'DiagnosticFloatingInfo' })
 end
 
+H.create_user_commands = function()
+  local callback = function(input)
+    local name, local_opts = H.command_parse_fargs(input.fargs)
+    local f = MiniPick.registry[name]
+    if f == nil then H.error(string.format('There is no picker named "%s" in registry.', name)) end
+    f(local_opts)
+  end
+  local opts = { nargs = '+', complete = H.command_complete, desc = "Pick from 'mini.pick' registry" }
+  vim.api.nvim_create_user_command('Pick', callback, opts)
+end
+
 -- Command --------------------------------------------------------------------
 H.command_parse_fargs = function(fargs)
   local name, opts_parts = fargs[1], vim.tbl_map(H.expandcmd, vim.list_slice(fargs, 2, #fargs))
@@ -1926,7 +1961,7 @@ H.validate_picker_opts = function(opts)
   local source = opts.source
 
   local items = source.items or {}
-  local is_valid_items = vim.tbl_islist(items) or vim.is_callable(items)
+  local is_valid_items = H.islist(items) or vim.is_callable(items)
   if not is_valid_items then H.error('`source.items` should be array or callable.') end
 
   source.name = tostring(source.name or '<No name>')
@@ -2108,6 +2143,7 @@ H.picker_new_win = function(buf_id, win_config)
   vim.wo[win_id].wrap = false
   H.win_update_hl(win_id, 'NormalFloat', 'MiniPickNormal')
   H.win_update_hl(win_id, 'FloatBorder', 'MiniPickBorder')
+  vim.fn.clearmatches(win_id)
 
   return win_id
 end
@@ -2355,7 +2391,7 @@ H.picker_set_bordertext = function(picker)
   if view_state == 'preview' and has_items then
     local stritem_cur = picker.stritems[picker.match_inds[picker.current_ind]] or ''
     -- Sanitize title
-    stritem_cur = stritem_cur:gsub('[%s%z]', ' ')
+    stritem_cur = stritem_cur:gsub('%z', '│'):gsub('%s', ' ')
     config = { title = { { H.win_trim_to_width(win_id, stritem_cur), 'MiniPickBorderText' } } }
   end
 
@@ -2893,10 +2929,23 @@ end
 
 -- Default show ---------------------------------------------------------------
 H.get_icon = function(x, icons)
-  local path_type, path = H.parse_path(x)
-  if path_type == nil then return { text = '' } end
+  local item_data = H.parse_item(x)
+  -- Prefer explicit `path` field with fallback on `text`
+  local path, path_type = item_data.path, item_data.type
+  if path == nil then
+    path_type, path = H.parse_path(item_data.text)
+  end
+  if path == nil or path_type == nil or path_type == 'none' then return { text = icons.none, hl = 'MiniPickNormal' } end
+
+  -- Prefer 'mini.icons'
+  if _G.MiniIcons ~= nil then
+    local category = path_type == 'directory' and 'directory' or 'file'
+    local icon, hl = _G.MiniIcons.get(category, path)
+    return { text = icon .. ' ', hl = hl }
+  end
+
+  -- Try falling back to 'nvim-web-devicons'
   if path_type == 'directory' then return { text = icons.directory, hl = 'MiniPickIconDirectory' } end
-  if path_type == 'none' then return { text = icons.none, hl = 'MiniPickNormal' } end
   local has_devicons, devicons = pcall(require, 'nvim-web-devicons')
   if not has_devicons then return { text = icons.file, hl = 'MiniPickIconFile' } end
 
@@ -2941,14 +2990,14 @@ H.parse_item_table = function(item)
 
   -- File or Directory
   if type(item.path) == 'string' then
-    local path_type, path, lnum, col, rest = H.parse_path(item.path)
-    if path_type == 'file' then
+    local path_type = H.get_fs_type(item.path)
+    if path_type == 'file' or path_type == 'uri' then
       --stylua: ignore
       return {
-        type = 'file',            path     = path,
-        lnum = lnum or item.lnum, end_lnum = item.end_lnum,
-        col  = col or item.col,   end_col  = item.end_col,
-        text = rest ~= '' and rest or item.text,
+        type = path_type, path     = item.path,
+        lnum = item.lnum, end_lnum = item.end_lnum,
+        col  = item.col,  end_col  = item.end_col,
+        text = item.text,
       }
     end
 
@@ -2960,12 +3009,15 @@ end
 
 H.parse_path = function(x)
   if type(x) ~= 'string' or x == '' then return nil end
-  -- Allow inputs like 'aa/bb', 'aa/bb:10', 'aa/bb:10:5', 'aa/bb:10:5:xxx'
-  -- Should also work for paths like 'aa-5'
-  local location_pattern = ':(%d+):?(%d*):?(.*)$'
-  local lnum, col, rest = x:match(location_pattern)
-  local path = x:gsub(location_pattern, '', 1)
-  path = path:sub(1, 1) == '~' and (vim.loop.os_homedir() or '~') .. path:sub(2) or path
+  -- Allow inputs like 'aa/bb', 'aa-5'. Also allow inputs for line/position
+  -- separated by null character:
+  -- - 'aa/bb\00010' (line 10).
+  -- - 'aa/bb\00010\0005' (line 10, col 5).
+  -- - 'aa/bb\00010\0005\000xx' (line 10, col 5, with "xx" description).
+  local location_pattern = '()%z(%d+)%z?(%d*)%z?(.*)$'
+  local from, lnum, col, rest = x:match(location_pattern)
+  local path = x:sub(1, (from or 0) - 1)
+  path = path:sub(1, 1) == '~' and ((vim.loop.os_homedir() or '~') .. path:sub(2)) or path
 
   -- Verify that path is real
   local path_type = H.get_fs_type(path)
@@ -2982,6 +3034,7 @@ H.get_fs_type = function(path)
   if path == '' then return 'none' end
   if vim.fn.filereadable(path) == 1 then return 'file' end
   if vim.fn.isdirectory(path) == 1 then return 'directory' end
+  if pcall(vim.uri_to_fname, path) then return 'uri' end
   return 'none'
 end
 
@@ -3022,6 +3075,11 @@ H.preview_buffer = function(buf_id, item_data, opts)
   H.preview_set_lines(buf_id, lines, item_data)
 end
 
+H.preview_uri = function(buf_id, item_data, opts)
+  item_data.buf_id = vim.uri_to_bufnr(item_data.path)
+  H.preview_buffer(buf_id, item_data, opts)
+end
+
 H.preview_inspect = function(buf_id, obj) H.set_buflines(buf_id, vim.split(vim.inspect(obj), '\n')) end
 
 H.preview_set_lines = function(buf_id, lines, extra)
@@ -3047,9 +3105,6 @@ H.preview_set_lines = function(buf_id, lines, extra)
 end
 
 H.preview_should_highlight = function(buf_id)
-  -- Neovim>=0.8 has more stable API
-  if vim.fn.has('nvim-0.8') == 0 then return false end
-
   -- Highlight if buffer size is not too big, both in total and per line
   local buf_size = vim.api.nvim_buf_call(buf_id, function() return vim.fn.line2byte(vim.fn.line('$') + 1) end)
   return buf_size <= 1000000 and buf_size <= 1000 * vim.api.nvim_buf_line_count(buf_id)
@@ -3080,6 +3135,8 @@ H.choose_path = function(win_target, item_data)
   -- Try to use already created buffer, if present. This avoids not needed
   -- `:edit` call and avoids some problems with auto-root from 'mini.misc'.
   local path, path_buf_id = item_data.path, nil
+  local is_uri, uri_path = pcall(vim.uri_to_fname, path)
+  path = is_uri and uri_path or path
   for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
     local is_target = H.is_valid_buf(buf_id) and vim.bo[buf_id].buflisted and vim.api.nvim_buf_get_name(buf_id) == path
     if is_target then path_buf_id = buf_id end
@@ -3163,10 +3220,13 @@ end
 --stylua: ignore
 H.grep_get_command = function(tool, pattern)
   if tool == 'rg' then
-    return { 'rg', '--column', '--line-number', '--no-heading', '--no-follow', '--color=never', '--', pattern }
+    return {
+      'rg', '--column', '--line-number', '--no-heading', '--field-match-separator=\\0',
+      '--no-follow', '--color=never', '--', pattern
+    }
   end
   if tool == 'git' then
-    local res = { 'git', 'grep', '--column', '--line-number', '--color=never', '--', pattern }
+    local res = { 'git', 'grep', '--column', '--line-number', '--null', '--color=never', '--', pattern }
     if vim.o.ignorecase then table.insert(res, 6, '--ignore-case') end
     return res
   end
@@ -3194,7 +3254,7 @@ H.grep_fallback_items = function(pattern, cwd)
       if not poke_picker() then return end
       for lnum, l in ipairs(vim.fn.readfile(path)) do
         local col = string.find(l, pattern)
-        if col ~= nil then table.insert(items, string.format('%s:%d:%d:%s', file, lnum, col, l)) end
+        if col ~= nil then table.insert(items, string.format('%s\0%d\0%d\0%s', file, lnum, col, l)) end
       end
     end
 
@@ -3232,7 +3292,7 @@ H.is_valid_buf = function(buf_id) return type(buf_id) == 'number' and vim.api.nv
 H.is_valid_win = function(win_id) return type(win_id) == 'number' and vim.api.nvim_win_is_valid(win_id) end
 
 H.is_array_of = function(x, ref_type)
-  if not vim.tbl_islist(x) then return false end
+  if not H.islist(x) then return false end
   for i = 1, #x do
     if type(x[i]) ~= ref_type then return false end
   end
@@ -3325,9 +3385,7 @@ H.win_update_hl = function(win_id, new_from, new_to)
   local new_winhighlight, n_replace = vim.wo[win_id].winhighlight:gsub(replace_pattern, new_entry)
   if n_replace == 0 then new_winhighlight = new_winhighlight .. ',' .. new_entry end
 
-  -- Use `pcall()` because Neovim<0.8 doesn't allow non-existing highlight
-  -- groups inside `winhighlight` (like `FloatTitle` at the time).
-  pcall(function() vim.wo[win_id].winhighlight = new_winhighlight end)
+  vim.wo[win_id].winhighlight = new_winhighlight
 end
 
 H.win_trim_to_width = function(win_id, text)
@@ -3365,5 +3423,8 @@ H.is_file_text = function(path)
 end
 
 H.full_path = function(path) return (vim.fn.fnamemodify(path, ':p'):gsub('(.)/$', '%1')) end
+
+-- TODO: Remove after compatibility with Neovim=0.9 is dropped
+H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
 
 return MiniPick

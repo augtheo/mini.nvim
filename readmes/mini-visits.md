@@ -82,7 +82,7 @@ Notes:
 
 - Tracking can be disabled by supplying empty string as `track.event`. Then it is up to the user to properly call `MiniVisits.register_visit()`.
 
-### Reusing visits ~
+### Reusing visits
 
 Visit data can be reused in at least these ways:
 
@@ -99,7 +99,7 @@ Visit data can be reused in at least these ways:
     There is no one right way to use them, though. See `*MiniVisits-examples*` help tag for some inspiration.
 
 - Utilizing custom data. Visit index can be manipulated manually using
-  `_index()` set of functions. All "storeable" user data inside index is then stored on disk, so it can be used to create any kind of workflow user wants.
+  `_index()` set of functions. All "storable" user data inside index is then stored on disk, so it can be used to create any kind of workflow user wants.
 
 See `*MiniVisits-examples*` help tag for some actual configuration and workflow examples.
 
@@ -107,72 +107,59 @@ See `*MiniVisits-examples*` help tag for some actual configuration and workflow 
 
 This plugin can be installed as part of 'mini.nvim' library (**recommended**) or as a standalone Git repository.
 
-<!-- TODO: Uncomment use of `stable` branch before 0.12.0 release -->
-
-<!-- There are two branches to install from: -->
-
-During beta-testing phase there is only one branch to install from:
+There are two branches to install from:
 
 - `main` (default, **recommended**) will have latest development version of plugin. All changes since last stable release should be perceived as being in beta testing phase (meaning they already passed alpha-testing and are moderately settled).
-<!-- - `stable` will be updated only upon releases with code tested during public beta-testing phase in `main` branch. -->
+- `stable` will be updated only upon releases with code tested during public beta-testing phase in `main` branch.
 
 Here are code snippets for some common installation methods (use only one):
+
+<details>
+<summary>With <a href="https://github.com/echasnovski/mini.nvim/blob/main/readmes/mini-deps.md">mini.deps</a></summary>
+<table>
+    <thead>
+        <tr>
+            <th>Github repo</th> <th>Branch</th> <th>Code snippet</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td rowspan=2>'mini.nvim' library</td> <td>Main</td> <td rowspan=2><i>Follow recommended 'mini.deps' installation</i></td>
+        </tr>
+        <tr>
+            <td>Stable</td>
+        </tr>
+        <tr>
+            <td rowspan=2>Standalone plugin</td> <td>Main</td> <td><code>add('echasnovski/mini.visits')</code></td>
+        </tr>
+        <tr>
+            <td>Stable</td> <td><code>add({ source = 'echasnovski/mini.visits', checkout = 'stable' })</code></td>
+        </tr>
+    </tbody>
+</table>
+</details>
 
 <details>
 <summary>With <a href="https://github.com/folke/lazy.nvim">folke/lazy.nvim</a></summary>
 <table>
     <thead>
         <tr>
-            <th>Github repo</th>
-            <th>Branch</th> <th>Code snippet</th>
+            <th>Github repo</th> <th>Branch</th> <th>Code snippet</th>
         </tr>
     </thead>
     <tbody>
         <tr>
-            <!-- <td rowspan=2>'mini.nvim' library</td> -->
-            <td rowspan=1>'mini.nvim' library</td>
-            <td>Main</td> <td><code>{ 'echasnovski/mini.nvim', version = false },</code></td>
+            <td rowspan=2>'mini.nvim' library</td> <td>Main</td> <td><code>{ 'echasnovski/mini.nvim', version = false },</code></td>
         </tr>
-        <!-- <tr> -->
-        <!--     <td>Stable</td> <td><code>{ 'echasnovski/mini.nvim', version = '*' },</code></td> -->
-        <!-- </tr> -->
         <tr>
-            <!-- <td rowspan=2>Standalone plugin</td> -->
-            <td rowspan=1>Standalone plugin</td>
-            <td>Main</td> <td><code>{ 'echasnovski/mini.visits', version = false },</code></td>
+            <td>Stable</td> <td><code>{ 'echasnovski/mini.nvim', version = '*' },</code></td>
         </tr>
-        <!-- <tr> -->
-        <!--     <td>Stable</td> <td><code>{ 'echasnovski/mini.visits', version = '*' },</code></td> -->
-        <!-- </tr> -->
-    </tbody>
-</table>
-</details>
-
-<details>
-<summary>With <a href="https://github.com/wbthomason/packer.nvim">wbthomason/packer.nvim</a></summary>
-<table>
-    <thead>
         <tr>
-            <th>Github repo</th>
-            <th>Branch</th> <th>Code snippet</th>
+            <td rowspan=2>Standalone plugin</td> <td>Main</td> <td><code>{ 'echasnovski/mini.visits', version = false },</code></td>
         </tr>
-    </thead>
-    <tbody>
         <tr>
-            <!-- <td rowspan=2>'mini.nvim' library</td> -->
-            <td rowspan=1>'mini.nvim' library</td>
-            <td>Main</td> <td><code>use 'echasnovski/mini.nvim'</code></td>
+            <td>Stable</td> <td><code>{ 'echasnovski/mini.visits', version = '*' },</code></td>
         </tr>
-        <!-- <tr> -->
-        <!--     <td>Stable</td> <td><code>use { 'echasnovski/mini.nvim', branch = 'stable' }</code></td> -->
-        <!-- </tr> -->
-        <tr>
-            <!-- <td rowspan=2>Standalone plugin</td> <td>Main</td> <td><code>use 'echasnovski/mini.visits'</code></td> -->
-            <td rowspan=1>Standalone plugin</td> <td>Main</td> <td><code>use 'echasnovski/mini.visits'</code></td>
-        </tr>
-        <!-- <tr> -->
-        <!--     <td>Stable</td> <td><code>use { 'echasnovski/mini.visits', branch = 'stable' }</code></td> -->
-        <!-- </tr> -->
     </tbody>
 </table>
 </details>
@@ -182,26 +169,22 @@ Here are code snippets for some common installation methods (use only one):
 <table>
     <thead>
         <tr>
-            <th>Github repo</th>
-            <th>Branch</th> <th>Code snippet</th>
+            <th>Github repo</th> <th>Branch</th> <th>Code snippet</th>
         </tr>
     </thead>
     <tbody>
         <tr>
-            <!-- <td rowspan=2>'mini.nvim' library</td> -->
-            <td rowspan=1>'mini.nvim' library</td>
-            <td>Main</td> <td><code>Plug 'echasnovski/mini.nvim'</code></td>
+            <td rowspan=2>'mini.nvim' library</td> <td>Main</td> <td><code>Plug 'echasnovski/mini.nvim'</code></td>
         </tr>
-        <!-- <tr> -->
-        <!--     <td>Stable</td> <td><code>Plug 'echasnovski/mini.nvim', { 'branch': 'stable' }</code></td> -->
-        <!-- </tr> -->
         <tr>
-            <!-- <td rowspan=2>Standalone plugin</td> <td>Main</td> <td><code>Plug 'echasnovski/mini.visits'</code></td> -->
-            <td rowspan=1>Standalone plugin</td> <td>Main</td> <td><code>Plug 'echasnovski/mini.visits'</code></td>
+            <td>Stable</td> <td><code>Plug 'echasnovski/mini.nvim', { 'branch': 'stable' }</code></td>
         </tr>
-        <!-- <tr> -->
-        <!--     <td>Stable</td> <td><code>Plug 'echasnovski/mini.visits', { 'branch': 'stable' }</code></td> -->
-        <!-- </tr> -->
+        <tr>
+            <td rowspan=2>Standalone plugin</td> <td>Main</td> <td><code>Plug 'echasnovski/mini.visits'</code></td>
+        </tr>
+        <tr>
+            <td>Stable</td> <td><code>Plug 'echasnovski/mini.visits', { 'branch': 'stable' }</code></td>
+        </tr>
     </tbody>
 </table>
 </details>

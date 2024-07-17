@@ -110,7 +110,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniAnimate.config|.
 ---
----@usage `require('mini.animate').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.animate').setup() -- use default config
+---   -- OR
+---   require('mini.animate').setup({}) -- replace {} with your config table
+--- <
 MiniAnimate.setup = function(config)
   -- Export module
   _G.MiniAnimate = MiniAnimate
@@ -133,8 +137,7 @@ end
 ---
 --- Default values:
 ---@eval return MiniDoc.afterlines_to_code(MiniDoc.current.eval_section)
----@text
---- # General ~
+---@text # General ~
 ---                                                             *MiniAnimate-timing*
 --- - Every animation is a non-blockingly scheduled series of specific actions.
 ---   They are executed in a sequence of timed steps controlled by `timing` option.
@@ -183,7 +186,7 @@ end
 ---   placed are silently omitted during animation: this step won't show any
 ---   visualization.
 ---
---- Configuration example: >
+--- Configuration example: >lua
 ---
 ---   local animate = require('mini.animate')
 ---   animate.setup({
@@ -197,7 +200,7 @@ end
 ---       }),
 ---     }
 ---   })
----
+--- <
 --- After animation is done, `MiniAnimateDoneCursor` event is triggered.
 ---
 ---                                                      *MiniAnimate.config.scroll*
@@ -233,14 +236,15 @@ end
 ---       command. Use |MiniAnimate.execute_after()| to schedule action after
 ---       reaching target window view.
 ---       Example: a useful `nnoremap n nzvzz` mapping (consecutive application
----       of |n|, |zv|, and |zz|) should have this right hand side: >
+---       of |n|, |zv|, and |zz|) should be expressed in the following way: >lua
 ---
----   <Cmd>lua vim.cmd('normal! n'); MiniAnimate.execute_after('scroll', 'normal! zvzz')<CR>
----
+---   '<Cmd>lua vim.cmd("normal! n"); ' ..
+---     'MiniAnimate.execute_after("scroll", "normal! zvzz")<CR>'
+--- <
 --- - This animation works best with Neovim>=0.9 (after certain updates to
 ---   |WinScrolled| event).
 ---
---- Configuration example: >
+--- Configuration example: >lua
 ---
 ---   local animate = require('mini.animate')
 ---   animate.setup({
@@ -252,7 +256,7 @@ end
 ---       subscroll = animate.gen_subscroll.equal({ max_output_steps = 120 }),
 ---     }
 ---   })
----
+--- <
 --- After animation is done, `MiniAnimateDoneScroll` event is triggered.
 ---
 ---                                                      *MiniAnimate.config.resize*
@@ -268,18 +272,21 @@ end
 --- tables with window id as keys and dimension table as values) and returns
 --- array of same shaped data.
 --- Example:
---- - Inputs
----   `{ [1000] = {width = 7, height = 5}, [1001] = {width = 7, height = 10} }`
----   and
----   `{ [1000] = {width = 9, height = 5}, [1001] = {width = 5, height = 10} }`
----   mean that window 1000 increased its width by 2 in expense of window 1001.
---- - The following output demonstrates equal resizing: >
+--- - Input: >lua
+---
+---   -- First
+---   { [1000] = {width = 7, height = 5}, [1001] = {width = 7, height = 10} }
+---   -- Second
+---   { [1000] = {width = 9, height = 5}, [1001] = {width = 5, height = 10} }
+---   -- Means window 1000 increased its width by 2 in expense of window 1001
+--- <
+--- - The following output demonstrates equal resizing: >lua
 ---
 ---   {
 ---     { [1000] = {width = 8, height = 5}, [1001] = {width = 6, height = 10} },
 ---     { [1000] = {width = 9, height = 5}, [1001] = {width = 5, height = 10} },
 ---   }
----
+--- <
 --- See |MiniAnimate.gen_subresize| for builtin subresize generators.
 ---
 --- Notes:
@@ -296,7 +303,7 @@ end
 ---   |WinScrolled| event). For example, resize resulting from effect of
 ---   'winheight' / 'winwidth' will work properly.
 ---
---- Configuration example: >
+--- Configuration example: >lua
 ---
 ---   local is_many_wins = function(sizes_from, sizes_to)
 ---     return vim.tbl_count(sizes_from) >= 3
@@ -311,7 +318,7 @@ end
 ---       subresize = animate.gen_subscroll.equal({ predicate = is_many_wins }),
 ---     }
 ---   })
----
+--- <
 --- After animation is done, `MiniAnimateDoneResize` event is triggered.
 ---
 ---                               *MiniAnimate.config.open* *MiniAnimate.config.close*
@@ -329,7 +336,7 @@ end
 --- argument of |nvim_open_win()|). Its length determines number of animation steps.
 --- Example:
 --- - The following output results into two animation steps with second being
----   upper left quarter of a first: >
+---   upper left quarter of a first: >lua
 ---
 ---   {
 ---     {
@@ -345,7 +352,7 @@ end
 ---       zindex   = 1,        style  = 'minimal',
 ---     },
 ---   }
----
+--- <
 --- The `winblend` option is similar to `timing` option: it is a callable
 --- which, given current and total step numbers, returns value of floating
 --- window's 'winblend' option. Note, that it is called for current step (so
@@ -357,7 +364,7 @@ end
 --- See |MiniAnimate.gen_winconfig| for builtin window config generators.
 --- See |MiniAnimate.gen_winblend| for builtin window transparency generators.
 ---
---- Configuration example: >
+--- Configuration example: >lua
 ---
 ---   local animate = require('mini.animate')
 ---   animate.setup({
@@ -383,7 +390,7 @@ end
 ---       winblend = animate.gen_winblend.linear({ from = 100, to = 80 }),
 ---     },
 ---   })
----
+--- <
 --- After animation is done, `MiniAnimateDoneOpen` or `MiniAnimateDoneClose`
 --- event is triggered for `open` and `close` animation respectively.
 MiniAnimate.config = {
@@ -512,10 +519,11 @@ end
 --- Example ~
 ---
 --- A useful `nnoremap n nzvzz` mapping (consecutive application of |n|, |zv|, and |zz|)
---- should have this right hand side: >
+--- should be expressed in the following way: >lua
 ---
----   <Cmd>lua vim.cmd('normal! n'); MiniAnimate.execute_after('scroll', 'normal! zvzz')<CR>
----
+---   '<Cmd>lua vim.cmd("normal! n"); ' ..
+---     'MiniAnimate.execute_after("scroll", "normal! zvzz")<CR>'
+--- <
 ---@param animation_type string One of supported animation types
 ---   (as in |MiniAnimate.is_active()|).
 ---@param action string|function Action to be executed. If string, executed as
@@ -619,7 +627,7 @@ end
 ---
 --- This is a table with function elements. Call to actually get timing function.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local animate = require('mini.animate')
 ---   animate.setup({
@@ -627,7 +635,7 @@ end
 ---       timing = animate.gen_timing.linear({ duration = 100, unit = 'total' })
 ---     },
 ---   })
----
+--- <
 ---@seealso |MiniIndentscope.gen_animation| for similar concept in 'mini.indentscope'.
 MiniAnimate.gen_timing = {}
 
@@ -690,7 +698,7 @@ MiniAnimate.gen_timing.exponential = function(opts) return H.timing_geometrical(
 ---
 --- This is a table with function elements. Call to actually get generator.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local animate = require('mini.animate')
 ---   animate.setup({
@@ -699,6 +707,7 @@ MiniAnimate.gen_timing.exponential = function(opts) return H.timing_geometrical(
 ---       path = animate.gen_path.angle(),
 ---     }
 ---   })
+--- <
 MiniAnimate.gen_path = {}
 
 ---@alias __animate_path_opts_common table|nil Options that control generator. Possible keys:
@@ -836,7 +845,7 @@ end
 ---
 --- This is a table with function elements. Call to actually get generator.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local animate = require('mini.animate')
 ---   animate.setup({
@@ -845,6 +854,7 @@ end
 ---       subscroll = animate.gen_subscroll.equal({ max_output_steps = 120 }),
 ---     }
 ---   })
+--- <
 MiniAnimate.gen_subscroll = {}
 
 --- Generate subscroll with equal steps
@@ -871,7 +881,7 @@ end
 ---
 --- This is a table with function elements. Call to actually get generator.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local is_many_wins = function(sizes_from, sizes_to)
 ---     return vim.tbl_count(sizes_from) >= 3
@@ -883,6 +893,7 @@ end
 ---       subresize = animate.gen_subresize.equal({ predicate = is_many_wins }),
 ---     }
 ---   })
+--- <
 MiniAnimate.gen_subresize = {}
 
 --- Generate subresize with equal steps
@@ -905,7 +916,7 @@ end
 ---
 --- This is a table with function elements. Call to actually get generator.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local is_not_single_window = function(win_id)
 ---     local tabpage_id = vim.api.nvim_win_get_tabpage(win_id)
@@ -930,6 +941,7 @@ end
 ---       }),
 ---     },
 ---   })
+--- <
 MiniAnimate.gen_winconfig = {}
 
 ---@alias __animate_winconfig_opts_common table|nil Options that control generator. Possible keys:
@@ -1094,7 +1106,7 @@ end
 --- This is a table with function elements. Call to actually get transparency
 --- function.
 ---
---- Example: >
+--- Example: >lua
 ---
 ---   local animate = require('mini.animate')
 ---   animate.setup({
@@ -1107,6 +1119,7 @@ end
 ---       winblend = animate.gen_winblend.linear({ from = 60, to = 80 }),
 ---     },
 ---   })
+--- <
 MiniAnimate.gen_winblend = {}
 
 --- Generate linear `winblend` progression
@@ -1355,7 +1368,7 @@ H.track_scroll_state_partial = function()
   -- a proper state tracking
   if H.cache.scroll_is_active then return end
 
-  H.cache.scroll_state.cursor = { line = vim.fn.line('.'), virtcol = H.virtcol('.') }
+  H.cache.scroll_state.cursor = { line = vim.fn.line('.'), virtcol = vim.fn.virtcol('.') }
 end
 
 H.on_cmdline_leave = function()
@@ -1437,7 +1450,7 @@ end
 
 H.get_cursor_state = function()
   -- Use virtual column to respect position outside of line width and tabs
-  return { buf_id = vim.api.nvim_get_current_buf(), pos = { vim.fn.line('.'), H.virtcol('.') } }
+  return { buf_id = vim.api.nvim_get_current_buf(), pos = { vim.fn.line('.'), vim.fn.virtcol('.') } }
 end
 
 H.draw_cursor_mark = function(line, virt_col, buf_id)
@@ -1601,7 +1614,7 @@ H.get_scroll_state = function()
     buf_id = vim.api.nvim_get_current_buf(),
     win_id = vim.api.nvim_get_current_win(),
     view = vim.fn.winsaveview(),
-    cursor = { line = vim.fn.line('.'), virtcol = H.virtcol('.') },
+    cursor = { line = vim.fn.line('.'), virtcol = vim.fn.virtcol('.') },
     scrolloff = H.cache.scroll_is_active and H.cache.scroll_state.scrolloff or vim.wo.scrolloff,
     virtualedit = H.cache.scroll_is_active and H.cache.scroll_state.virtualedit or vim.wo.virtualedit,
   }
@@ -2124,24 +2137,14 @@ end
 
 H.convex_point = function(x, y, coef) return H.round((1 - coef) * x + coef * y) end
 
--- `virtcol2col()` is only present in Neovim>=0.8. Earlier Neovim versions will
--- have troubles dealing with multibyte characters and tabs.
-if vim.fn.exists('*virtcol2col') == 1 then
-  H.virtcol2col = function(line, virtcol)
-    local col = vim.fn.virtcol2col(0, line, virtcol)
+H.virtcol2col = function(line, virtcol)
+  local col = vim.fn.virtcol2col(0, line, virtcol)
 
-    -- Current for virtual column being outside of line's last virtual column
-    local virtcol_past_lineend = vim.fn.virtcol({ line, '$' })
-    if virtcol_past_lineend <= virtcol then col = col + virtcol - virtcol_past_lineend + 1 end
+  -- Current for virtual column being outside of line's last virtual column
+  local virtcol_past_lineend = vim.fn.virtcol({ line, '$' })
+  if virtcol_past_lineend <= virtcol then col = col + virtcol - virtcol_past_lineend + 1 end
 
-    return col
-  end
-
-  H.virtcol = vim.fn.virtcol
-else
-  H.virtcol2col = function(_, col) return col end
-
-  H.virtcol = vim.fn.col
+  return col
 end
 
 H.is_select_mode = function() return ({ s = true, S = true, ['\19'] = true })[vim.fn.mode()] end

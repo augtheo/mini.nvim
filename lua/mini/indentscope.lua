@@ -41,7 +41,8 @@
 ---
 --- You can override runtime config settings locally to buffer inside
 --- `vim.b.miniindentscope_config` which should have same structure as
---- `MiniIndentscope.config`. See |mini.nvim-buffer-local-config| for more details.
+--- `MiniIndentscope.config`. See |mini.nvim-buffer-local-config| for more
+--- details.
 ---
 --- # Comparisons ~
 ---
@@ -106,7 +107,11 @@ local H = {}
 ---
 ---@param config table|nil Module config table. See |MiniIndentscope.config|.
 ---
----@usage `require('mini.indentscope').setup({})` (replace `{}` with your `config` table)
+---@usage >lua
+---   require('mini.indentscope').setup() -- use default config
+---   -- OR
+---   require('mini.indentscope').setup({}) -- replace {} with your config table
+--- <
 MiniIndentscope.setup = function(config)
   -- Export module
   _G.MiniIndentscope = MiniIndentscope
@@ -139,8 +144,8 @@ end
 ---   It also controls how empty lines are treated: they are included in scope
 ---   only if followed by a border. Another way of looking at it is that indent
 ---   of blank line is computed based on value of `border` option.
----   Here is an illustration of how `border` works in presence of empty lines:
---- >
+---   Here is an illustration of how `border` works in presence of empty lines: >
+---
 ---                              |both|bottom|top|none|
 ---   1|function foo()           | 0  |  0   | 0 | 0  |
 ---   2|                         | 4  |  0   | 4 | 0  |
@@ -160,8 +165,8 @@ end
 ---   computation of scope. If `true`, reference indent is a minimum of
 ---   reference line's indent and cursor column. In main example, here how
 ---   scope's body range differs depending on cursor column and `indent_at_cursor`
----   value (assuming cursor is on line 3 and it is whole buffer):
---- >
+---   value (assuming cursor is on line 3 and it is whole buffer): >
+---
 ---     Column\Option true|false
 ---        1 and 2    2-5 | 2-4
 ---      3 and more   2-4 | 2-4
@@ -365,9 +370,10 @@ MiniIndentscope.undraw = function() H.undraw_scope() end
 ---
 --- Examples ~
 --- - Don't use animation: `MiniIndentscope.gen_animation.none()`
---- - Use quadratic "out" easing with total duration of 1000 ms:
----   `gen_animation.quadratic({ easing = 'out', duration = 1000, unit = 'total' })`
+--- - Use quadratic "out" easing with total duration of 1000 ms: >lua
 ---
+---   gen_animation.quadratic({ easing = 'out', duration = 1000, unit = 'total' })
+--- <
 ---@seealso |MiniIndentscope-drawing| for more information about how drawing is done.
 MiniIndentscope.gen_animation = {}
 
@@ -593,6 +599,9 @@ H.border_correctors = {
     return line - 1
   end,
 }
+
+-- Whether or not Nvim supports the virt_text_repeat_linebreak extmark feature
+H.has_wrapped_virt_text = vim.fn.has('nvim-0.10') == 1
 
 -- Helper functionality =======================================================
 -- Settings -------------------------------------------------------------------
@@ -937,6 +946,8 @@ H.make_draw_function = function(indicator, opts)
     virt_text_win_col = indicator.virt_text_win_col,
     virt_text_pos = 'overlay',
   }
+
+  if H.has_wrapped_virt_text and vim.wo.breakindent then extmark_opts.virt_text_repeat_linebreak = true end
 
   local current_event_id = opts.event_id
 
