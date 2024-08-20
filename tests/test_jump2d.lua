@@ -13,8 +13,7 @@ local set_cursor = function(...) return child.set_cursor(...) end
 local get_cursor = function(...) return child.get_cursor(...) end
 local set_lines = function(...) return child.set_lines(...) end
 local type_keys = function(...) return child.type_keys(...) end
-local poke_eventloop = function() child.api.nvim_eval('1') end
-local sleep = function(ms) vim.loop.sleep(ms); poke_eventloop() end
+local sleep = function(ms) helpers.sleep(ms, child) end
 local get_latest_message = function() return child.cmd_capture('1messages') end
 --stylua: ignore end
 
@@ -80,6 +79,10 @@ local setup_two_windows = function()
 
   return wins
 end
+
+-- Time constants
+local helper_message_delay = 1000
+local small_time = helpers.get_time_const(10)
 
 -- Output test set ============================================================
 local T = new_set({
@@ -230,7 +233,7 @@ T['start()'] = new_set({
 
 local start = function(...)
   child.lua('MiniJump2d.start(...)', { ... })
-  poke_eventloop()
+  child.poke_eventloop()
 end
 
 T['start()']['works'] = function()
@@ -355,7 +358,7 @@ T['start()']['prompts helper message after one idle second'] = function()
   child.lua([[MiniJump2d.config.labels = 'jk']])
 
   start()
-  sleep(1000 + 10)
+  sleep(helper_message_delay + small_time)
 
   -- Should show helper message without adding it to `:messages` and causing
   -- hit-enter-prompt
@@ -364,11 +367,11 @@ T['start()']['prompts helper message after one idle second'] = function()
 
   -- Should clean afterwards
   type_keys('j')
-  sleep(10)
+  sleep(small_time)
   child.expect_screenshot()
 
   -- Should show message for every key in sequence
-  sleep(1000 + 10)
+  sleep(helper_message_delay + small_time)
   child.expect_screenshot()
 end
 
@@ -856,7 +859,7 @@ T['start()']['respects `config.silent`'] = function()
   child.set_size(10, 20)
 
   start()
-  sleep(1000 + 15)
+  sleep(helper_message_delay + small_time)
 
   -- Should not show helper message
   child.expect_screenshot()
@@ -1142,9 +1145,9 @@ T['builtin_opts.single_character']['prompts helper message after one idle second
 
   start_single_char()
   eq(get_latest_message(), '')
-  sleep(1000 - 10)
+  sleep(helper_message_delay - small_time)
   eq(get_latest_message(), '')
-  sleep(10 + 1)
+  sleep(small_time + small_time)
 
   -- Should show helper message without adding it to `:messages` and causing
   -- hit-enter-prompt

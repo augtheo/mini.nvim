@@ -117,6 +117,7 @@
 --- * `MiniPickBorder` - window border.
 --- * `MiniPickBorderBusy` - window border while picker is busy processing.
 --- * `MiniPickBorderText` - non-prompt on border.
+--- * `MiniPickCursor` - cursor during active picker (hidden by default).
 --- * `MiniPickIconDirectory` - default icon for directory.
 --- * `MiniPickIconFile` - default icon for file.
 --- * `MiniPickHeader` - headers in info buffer and previews.
@@ -704,7 +705,7 @@ MiniPick.setup = function(config)
   local paste_orig = vim.paste
   vim.paste = function(...)
     if not MiniPick.is_picker_active() then return paste_orig(...) end
-    vim.notify('(mini.pick) Use `mappings.paste` (`<C-r>` by default) with "*" or "+" register.', vim.log.levels.HINT)
+    H.notify('Use `mappings.paste` (`<C-r>` by default) with "*" or "+" register.', 'HINT')
   end
 end
 
@@ -975,20 +976,35 @@ end
 ---@param inds table Array of `stritems` indexes to match. All of them should point
 ---   at string elements of `stritems`. No check is done for performance reasons.
 ---@param query table Array of strings.
----@param do_sync boolean|nil Whether to match synchronously. Default: `nil`.
+---@param opts table|nil Options. Possible fields:
+---   - <sync> `(boolean)` - Whether to match synchronously. Default: `false`.
+---   - <preserve_order> `(boolean)` - Whether to skip sort step. Default: `false`.
 ---
----@return table|nil Depending on whether computation is synchronous (either `do_sync`
----   is truthy or there is an active picker):
+---@return table|nil Depending on whether computation is synchronous (either `opts.sync`
+---   is `true` or there is an active picker):
 ---   - If yes, array of `stritems` indexes matching the `query` (from best to worst).
 ---   - If no, `nil` is returned with |MiniPick.set_picker_match_inds()| used later.
-MiniPick.default_match = function(stritems, inds, query, do_sync)
-  local is_sync = do_sync or not MiniPick.is_picker_active()
+MiniPick.default_match = function(stritems, inds, query, opts)
+  -- TODO: Remove after mini.nvim 0.14 release
+  if opts and type(opts) ~= 'table' then
+    if not H.notified_match_opts then
+      local msg = 'Use `{ sync = true }` as fourth argument to `default_match`.'
+        .. " Current code will not work after the next 'mini.nvim' release."
+      H.notify(msg, 'WARN')
+      H.notified_match_opts = true
+    end
+    opts = { sync = true }
+  end
+
+  opts = opts or {}
+  local is_sync = opts.sync or not MiniPick.is_picker_active()
   local set_match_inds = is_sync and function(x) return x end or MiniPick.set_picker_match_inds
   local f = function()
     if #query == 0 then return set_match_inds(H.seq_along(stritems)) end
     local match_data, match_type = H.match_filter(inds, stritems, query)
     if match_data == nil then return end
-    if match_type == 'nosort' then return set_match_inds(H.seq_along(stritems)) end
+    if match_type == 'useall' then return set_match_inds(H.seq_along(stritems)) end
+    if opts.preserve_order then return set_match_inds(H.match_no_sort(match_data)) end
     local match_inds = H.match_sort(match_data)
     if match_inds == nil then return end
     return set_match_inds(match_inds)
@@ -1163,8 +1179,7 @@ MiniPick.default_choose_marked = function(items, opts)
   for _, item in ipairs(items) do
     local item_data = H.parse_item(item)
     if item_data.type == 'file' or item_data.type == 'buffer' or item_data.type == 'uri' then
-      local is_uri, uri_path = pcall(vim.uri_to_fname, item_data.path)
-      local entry = { bufnr = item_data.buf_id, filename = is_uri and uri_path or item_data.path }
+      local entry = { bufnr = item_data.buf_id, filename = H.parse_uri(item_data.path) or item_data.path }
       entry.lnum, entry.col, entry.text = item_data.lnum or 1, item_data.col or 1, item_data.text or ''
       entry.end_lnum, entry.end_col = item_data.end_lnum, item_data.end_col
       table.insert(list, entry)
@@ -1655,7 +1670,13 @@ MiniPick.set_picker_items_from_cli = function(command, opts)
   local process, pid, stdout = nil, nil, vim.loop.new_pipe()
   local spawn_opts = vim.tbl_deep_extend('force', opts.spawn_opts, { args = args, stdio = { nil, stdout, nil } })
   if type(spawn_opts.cwd) == 'string' then spawn_opts.cwd = H.full_path(spawn_opts.cwd) end
-  process, pid = vim.loop.spawn(executable, spawn_opts, function() process:close() end)
+  process, pid = vim.loop.spawn(executable, spawn_opts, function()
+    if process:is_active() then process:close() end
+  end)
+
+  -- Make sure to stop the process if picker is stopped
+  local kill_process = function() pcall(vim.loop.process_kill, process) end
+  vim.api.nvim_create_autocmd('User', { pattern = 'MiniPickStop', once = true, callback = kill_process })
 
   local data_feed = {}
   stdout:read_start(function(err, data)
@@ -1809,6 +1830,9 @@ H.querytick = 0
 -- General purpose cache
 H.cache = {}
 
+-- File system information
+H.is_windows = vim.loop.os_uname().sysname == 'Windows_NT'
+
 -- Helper functionality =======================================================
 -- Settings -------------------------------------------------------------------
 H.setup_config = function(config)
@@ -1891,6 +1915,7 @@ H.create_autocommands = function(config)
   end
 
   au('VimResized', '*', MiniPick.refresh, 'Refresh on resize')
+  au('ColorScheme', '*', H.create_default_hl, 'Ensure proper colors')
 end
 
 --stylua: ignore
@@ -1903,6 +1928,7 @@ H.create_default_hl = function()
   hi('MiniPickBorder',        { link = 'FloatBorder' })
   hi('MiniPickBorderBusy',    { link = 'DiagnosticFloatingWarn' })
   hi('MiniPickBorderText',    { link = 'FloatTitle' })
+  hi('MiniPickCursor',        { blend = 100, nocombine = true })
   hi('MiniPickIconDirectory', { link = 'Directory' })
   hi('MiniPickIconFile',      { link = 'MiniPickNormal' })
   hi('MiniPickHeader',        { link = 'DiagnosticFloatingHint' })
@@ -2126,12 +2152,11 @@ H.picker_new_buf = function()
 end
 
 H.picker_new_win = function(buf_id, win_config)
-  -- Focus cursor on Command line to not see it
-  if vim.fn.mode() == 'n' then
-    H.cache.cmdheight = vim.o.cmdheight
-    vim.o.cmdheight = 1
-    vim.cmd('noautocmd normal! :')
-  end
+  -- Hide cursor while picker is active (to not be visible in the window)
+  -- This mostly follows a hack from 'folke/noice.nvim'
+  H.cache.guicursor = vim.o.guicursor
+  vim.o.guicursor = 'a:MiniPickCursor'
+
   -- Create window and focus on it
   local win_id = vim.api.nvim_open_win(buf_id, true, H.picker_compute_win_config(win_config, true))
 
@@ -2438,7 +2463,10 @@ end
 
 H.picker_stop = function(picker, abort)
   vim.tbl_map(function(timer) pcall(vim.loop.timer_stop, timer) end, H.timers)
-  pcall(function() vim.o.cmdheight = H.cache.cmdheight end)
+
+  -- Show cursor (work around `guicursor=''` actually leaving cursor hidden)
+  if H.cache.guicursor == '' then vim.cmd('set guicursor=a: | redraw') end
+  pcall(function() vim.o.guicursor = H.cache.guicursor end)
 
   if picker == nil then return end
 
@@ -2759,7 +2787,7 @@ H.match_filter = function(inds, stritems, query)
     query = grouped_parts
   end
 
-  if #query == 0 then return {}, 'nosort', query end
+  if #query == 0 then return {}, 'useall', query end
 
   local is_fuzzy_plain = not (is_exact_plain or is_exact_start or is_exact_end) and #query > 1
   if is_fuzzy_forced or is_fuzzy_plain then return H.match_filter_fuzzy(inds, stritems, query), 'fuzzy', query end
@@ -2927,15 +2955,16 @@ H.match_sort = function(match_data)
   return res
 end
 
+H.match_no_sort = function(match_data)
+  return vim.tbl_map(function(x) return x[3] end, match_data)
+end
+
 -- Default show ---------------------------------------------------------------
 H.get_icon = function(x, icons)
   local item_data = H.parse_item(x)
-  -- Prefer explicit `path` field with fallback on `text`
-  local path, path_type = item_data.path, item_data.type
-  if path == nil then
-    path_type, path = H.parse_path(item_data.text)
-  end
-  if path == nil or path_type == nil or path_type == 'none' then return { text = icons.none, hl = 'MiniPickNormal' } end
+  local path = item_data.path or item_data.text or ''
+  local path_type = H.get_fs_type(path)
+  if path_type == 'none' then return { text = icons.none, hl = 'MiniPickNormal' } end
 
   -- Prefer 'mini.icons'
   if _G.MiniIcons ~= nil then
@@ -2981,7 +3010,7 @@ H.parse_item_table = function(item)
   if H.is_valid_buf(buf_id) then
     --stylua: ignore
     return {
-      type = 'buffer',  buf_id   = buf_id,
+      type = 'buffer',  buf_id   = buf_id, path = item.path or vim.api.nvim_buf_get_name(buf_id),
       lnum = item.lnum, end_lnum = item.end_lnum,
       col  = item.col,  end_col  = item.end_col,
       text = item.text,
@@ -3034,14 +3063,15 @@ H.get_fs_type = function(path)
   if path == '' then return 'none' end
   if vim.fn.filereadable(path) == 1 then return 'file' end
   if vim.fn.isdirectory(path) == 1 then return 'directory' end
-  if pcall(vim.uri_to_fname, path) then return 'uri' end
+  if H.parse_uri(path) ~= nil then return 'uri' end
   return 'none'
 end
 
 -- Default preview ------------------------------------------------------------
 H.preview_file = function(buf_id, item_data, opts)
-  -- Fully preview only text files
-  if not H.is_file_text(item_data.path) then return H.set_buflines(buf_id, { '-Non-text-file-' }) end
+  -- Fully preview only accessible text files
+  local is_text = H.is_file_text(item_data.path)
+  if not is_text then return H.set_buflines(buf_id, { is_text == nil and '-No-access-' or '-Non-text-file-' }) end
 
   -- Compute lines. Limit number of read lines to work better on large files.
   local has_lines, lines = pcall(vim.fn.readfile, item_data.path, '', (item_data.lnum or 1) + opts.n_context_lines)
@@ -3134,9 +3164,7 @@ end
 H.choose_path = function(win_target, item_data)
   -- Try to use already created buffer, if present. This avoids not needed
   -- `:edit` call and avoids some problems with auto-root from 'mini.misc'.
-  local path, path_buf_id = item_data.path, nil
-  local is_uri, uri_path = pcall(vim.uri_to_fname, path)
-  path = is_uri and uri_path or path
+  local path, path_buf_id = H.parse_uri(item_data.path) or item_data.path, nil
   for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
     local is_target = H.is_valid_buf(buf_id) and vim.bo[buf_id].buflisted and vim.api.nvim_buf_get_name(buf_id) == path
     if is_target then path_buf_id = buf_id end
@@ -3221,7 +3249,7 @@ end
 H.grep_get_command = function(tool, pattern)
   if tool == 'rg' then
     return {
-      'rg', '--column', '--line-number', '--no-heading', '--field-match-separator=\\0',
+      'rg', '--column', '--line-number', '--no-heading', '--field-match-separator', '\\x00',
       '--no-follow', '--color=never', '--', pattern
     }
   end
@@ -3286,6 +3314,8 @@ end
 
 -- Utilities ------------------------------------------------------------------
 H.error = function(msg) error(string.format('(mini.pick) %s', msg), 0) end
+
+H.notify = function(msg, level_name) vim.notify('(mini.pick) ' .. msg, vim.log.levels[level_name]) end
 
 H.is_valid_buf = function(buf_id) return type(buf_id) == 'number' and vim.api.nvim_buf_is_valid(buf_id) end
 
@@ -3417,12 +3447,24 @@ end
 
 H.is_file_text = function(path)
   local fd = vim.loop.fs_open(path, 'r', 1)
+  if fd == nil then return nil end
   local is_text = vim.loop.fs_read(fd, 1024):find('\0') == nil
   vim.loop.fs_close(fd)
   return is_text
 end
 
 H.full_path = function(path) return (vim.fn.fnamemodify(path, ':p'):gsub('(.)/$', '%1')) end
+if H.is_windows then
+  H.full_path = function(path) return (vim.fn.fnamemodify(path, ':p'):gsub('(.)[\\/]$', '%1')) end
+end
+
+H.parse_uri = function(x)
+  local ok, path = pcall(vim.uri_to_fname, x)
+  if not ok then return nil end
+  -- Don't accept Windows paths with volume letter as URI
+  if H.is_windows and x:find('^%a:') ~= nil and path:find('^%a:') ~= nil then return nil end
+  return path
+end
 
 -- TODO: Remove after compatibility with Neovim=0.9 is dropped
 H.islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist

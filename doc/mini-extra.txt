@@ -240,6 +240,8 @@ Parameters ~
   Possible fields:
   - <scope> `(string)` - one of "all" (normal listed buffers) or "current".
     Default: "all".
+  - <preserve_order> `(boolean)` - whether to preserve original order
+    during query. Default: `false`.
 {opts} `(table|nil)` Options forwarded to |MiniPick.start()|.
 
 Return ~
@@ -598,6 +600,8 @@ Notes:
   In particular, it means that picker is started only if LSP server returns
   list of locations and not a single location.
 - Doesn't return anything due to async nature of `vim.lsp.buf` methods.
+- Requires set up |mini.icons| to show extra icons and highlighting in
+  "document_symbol" and "workspace_symbol" scopes.
 
 Examples ~
 
@@ -606,7 +610,7 @@ Examples ~
 - `:Pick lsp scope='document_symbol'` - symbols in current file.
 
 Parameters ~
-{local_opts} `(table)` Options defining behavior of this particular picker.
+{local_opts} `(table|nil)` Options defining behavior of this particular picker.
   Possible fields:
   - <scope> `(string)` - LSP method to use. One of the supported ones (see
     list above). Default: `nil` which means explicit scope is needed.
@@ -646,6 +650,8 @@ Parameters ~
   Possible fields:
   - <current_dir> `(boolean)` - whether to return files only from current
     working directory and its subdirectories. Default: `false`.
+  - <preserve_order> `(boolean)` - whether to preserve original order
+    during query. Default: `false`.
 {opts} `(table|nil)` Options forwarded to |MiniPick.start()|.
 
 Return ~

@@ -300,7 +300,7 @@ MiniGit.config = {
 
 --- Show Git related data at cursor
 ---
---- - If there is a commit-like |<cword>|, show it in split with `git show`.
+--- - If there is a commit-like |<cword>|, show it in split.
 --- - If possible, show diff source via |MiniGit.show_diff_source()|.
 --- - If possible, show range history via |MiniGit.show_range_history()|.
 --- - Otherwise throw an error.
@@ -317,7 +317,7 @@ MiniGit.show_at_cursor = function(opts)
   local is_commit = string.find(cword, '^%x%x%x%x%x%x%x+$') ~= nil and string.lower(cword) == cword
   if is_commit then
     local split = H.normalize_split_opt((opts or {}).split or 'auto', 'opts.split')
-    local args = { 'show', cword }
+    local args = { 'show', '--stat', '--patch', cword }
     local lines = H.git_cli_output(args, cwd)
     if #lines == 0 then return H.notify('Can not show commit ' .. cword, 'WARN') end
     H.show_in_split(split, lines, 'show', table.concat(args, ' '))
@@ -432,11 +432,12 @@ MiniGit.show_range_history = function(opts)
 
   -- Construct `:Git log` command that works both with regular files and
   -- buffers from `show_diff_source()`
-  local buf_name = vim.api.nvim_buf_get_name(0)
-  local cwd = H.get_git_cwd()
+  local buf_name, cwd = vim.api.nvim_buf_get_name(0), H.get_git_cwd()
   local commit, rel_path = H.parse_diff_source_buf_name(buf_name)
   if commit == nil then
-    commit, rel_path = 'HEAD', buf_name:gsub(vim.pesc(cwd) .. '/', '')
+    commit = 'HEAD'
+    local cwd_pattern = '^' .. vim.pesc(cwd:gsub('\\', '/')) .. '/'
+    rel_path = buf_name:gsub('\\', '/'):gsub(cwd_pattern, '')
   end
 
   -- Ensure no uncommitted changes as they might result into improper `-L` arg
@@ -1129,7 +1130,14 @@ H.show_in_split = function(mods, lines, subcmd, name)
   local filetype
   if subcmd == 'diff' then filetype = 'diff' end
   if subcmd == 'log' or subcmd == 'blame' then filetype = 'git' end
-  if subcmd == 'show' then filetype = vim.filetype.match({ buf = buf_id }) end
+  if subcmd == 'show' then
+    -- Try detecting 'git' filetype by content first, as filetype detection can
+    -- rely on the buffer name (i.e. command) having proper extension. It isn't
+    -- good for cases like `:Git show HEAD file.lua` (which should be 'git').
+    local l = lines[1]
+    local is_diff = l:find(string.rep('%x', 40)) or l:find('ref:')
+    filetype = is_diff and 'git' or vim.filetype.match({ buf = buf_id })
+  end
 
   local has_filetype = not (filetype == nil or filetype == '')
   if has_filetype then vim.bo[buf_id].filetype = filetype end
@@ -1163,6 +1171,7 @@ H.define_minigit_window = function(cleanup)
 end
 
 H.git_cli_output = function(args, cwd, env)
+  if cwd ~= nil and vim.fn.isdirectory(cwd) ~= 1 then return {} end
   local command = { MiniGit.config.job.git_executable, '--no-pager', unpack(args) }
   local res = H.cli_run(command, cwd, nil, { env = env }).out
   if res == '' then return {} end
@@ -1254,7 +1263,7 @@ H.start_tracking = function(buf_id, path)
   -- If path is not in Git, disable buffer but make sure that it will not try
   -- to re-attach until buffer is properly disabled
   local on_not_in_git = function()
-    MiniGit.disable(buf_id)
+    if H.is_buf_enabled(buf_id) then MiniGit.disable(buf_id) end
     H.cache[buf_id] = {}
   end
 

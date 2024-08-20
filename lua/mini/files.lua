@@ -323,8 +323,8 @@
 --- - `MiniFilesWindowOpen` - when new window is opened. Can be used to set
 ---   window-local settings (like border, 'winblend', etc.)
 ---
---- - `MiniFilesWindowUpdate` - when a window is updated. Triggers frequently,
----   for example, for every "go in" or "go out" action.
+--- - `MiniFilesWindowUpdate` - when a window is updated. Triggers VERY frequently.
+---   At least after every cursor movement and "go in" / "go out" action.
 ---
 --- Callback for each UI event will receive `data` field (see |nvim_create_autocmd()|)
 --- with the following information:
@@ -366,7 +366,8 @@
 --- <
 --- # Customize windows ~
 ---
---- Create an autocommand for `MiniFilesWindowOpen` event: >lua
+--- For most of the common customizations using `MiniFilesWindowOpen` event
+--- autocommand is the suggested approach: >lua
 ---
 ---   vim.api.nvim_create_autocmd('User', {
 ---     pattern = 'MiniFilesWindowOpen',
@@ -381,9 +382,32 @@
 ---     end,
 ---   })
 --- <
+--- However, some parts (like window title and height) of window config are later
+--- updated internally. Use `MiniFilesWindowUpdate` event for them: >lua
+---
+---   vim.api.nvim_create_autocmd('User', {
+---     pattern = 'MiniFilesWindowUpdate',
+---     callback = function(args)
+---       local config = vim.api.nvim_win_get_config(args.data.win_id)
+---
+---       -- Ensure fixed height
+---       config.height = 10
+---
+---       -- Ensure title padding
+---       if config.title[#config.title][1] ~= ' ' then
+---         table.insert(config.title, { ' ', 'NormalFloat' })
+---       end
+---       if config.title[1][1] ~= ' ' then
+---         table.insert(config.title, 1, { ' ', 'NormalFloat' })
+---       end
+---
+---       vim.api.nvim_win_set_config(args.data.win_id, config)
+---     end,
+---   })
+--- <
 --- # Customize icons ~
 ---
---- Use different directory icon: >lua
+--- Use different directory icon (if you don't use |mini.icons|): >lua
 ---
 ---   local my_prefix = function(fs_entry)
 ---     if fs_entry.fs_type == 'directory' then
@@ -759,7 +783,9 @@ MiniFiles.synchronize = function()
 
   -- Parse and apply file system operations
   local fs_actions = H.explorer_compute_fs_actions(explorer)
-  if fs_actions ~= nil and H.fs_actions_confirm(fs_actions) then H.fs_actions_apply(fs_actions, explorer.opts) end
+  if fs_actions ~= nil and H.fs_actions_confirm(fs_actions, explorer.opts) then
+    H.fs_actions_apply(fs_actions, explorer.opts)
+  end
 
   H.explorer_refresh(explorer, { force_update = true })
 end
@@ -843,7 +869,7 @@ end
 --- - If file, open it in the window which was current during |MiniFiles.open()|.
 ---   Explorer is not closed after that.
 ---
----@param opts Options. Possible fields:
+---@param opts table|nil Options. Possible fields:
 ---   - <close_on_file> `(boolean)` - whether to close explorer after going
 ---     inside a file. Powers the `go_in_plus` mapping.
 ---     Default: `false`.
@@ -1026,7 +1052,7 @@ MiniFiles.default_prefix = function(fs_entry)
   -- Prefer 'mini.icons'
   if _G.MiniIcons ~= nil then
     local category = fs_entry.fs_type == 'directory' and 'directory' or 'file'
-    local icon, hl = _G.MiniIcons.get(category, fs_entry.name)
+    local icon, hl = _G.MiniIcons.get(category, fs_entry.path)
     return icon .. ' ', hl
   end
 
@@ -1107,9 +1133,6 @@ H.opened_buffers = {}
 
 -- File system information
 H.is_windows = vim.loop.os_uname().sysname == 'Windows_NT'
-
--- Register table to decide whether certain autocmd events should be triggered
-H.block_event_trigger = {}
 
 -- Helper functionality =======================================================
 -- Settings -------------------------------------------------------------------
@@ -1437,6 +1460,16 @@ H.explorer_go_in_range = function(explorer, buf_id, from_line, to_line)
     if fs_entry.fs_type == 'directory' then
       path, line = fs_entry.path, i
     end
+    if fs_entry.fs_type == nil and fs_entry.path == nil then
+      local entry = vim.inspect(H.get_bufline(buf_id, i))
+      H.notify('Line ' .. entry .. ' does not have proper format. Did you modify without synchronization?', 'WARN')
+    end
+    if fs_entry.fs_type == nil and fs_entry.path ~= nil then
+      local path_resolved = vim.fn.resolve(fs_entry.path)
+      local symlink_info = path_resolved == fs_entry.path and ''
+        or (' Looks like miscreated symlink (resolved to ' .. path_resolved .. ').')
+      H.notify('Path ' .. fs_entry.path .. ' is not present on disk.' .. symlink_info, 'WARN')
+    end
   end
 
   for _, file_path in ipairs(files) do
@@ -1602,9 +1635,11 @@ H.explorer_open_file = function(explorer, path)
 
   -- Try to use already created buffer, if present. This avoids not needed
   -- `:edit` call and avoids some problems with auto-root from 'mini.misc'.
+  path = H.fs_normalize_path(path)
   local path_buf_id
   for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
-    local is_target = H.is_valid_buf(buf_id) and vim.bo[buf_id].buflisted and vim.api.nvim_buf_get_name(buf_id) == path
+    local is_same_name = H.fs_normalize_path(vim.api.nvim_buf_get_name(buf_id)) == path
+    local is_target = H.is_valid_buf(buf_id) and vim.bo[buf_id].buflisted and is_same_name
     if is_target then path_buf_id = buf_id end
   end
 
@@ -1840,10 +1875,7 @@ H.view_track_cursor = vim.schedule_wrap(function(data)
 
   explorer = H.explorer_sync_cursor_and_branch(explorer, buf_depth)
 
-  -- Don't trigger redundant window update events
-  H.block_event_trigger['MiniFilesWindowUpdate'] = true
   H.explorer_refresh(explorer)
-  H.block_event_trigger['MiniFilesWindowUpdate'] = false
 end)
 
 H.view_track_text_change = function(data)
@@ -1857,13 +1889,20 @@ H.view_track_text_change = function(data)
   -- Track window height
   if not H.is_valid_win(win_id) then return end
 
+  local cur_height = vim.api.nvim_win_get_height(win_id)
   local n_lines = vim.api.nvim_buf_line_count(buf_id)
-  local height = math.min(n_lines, H.window_get_max_height())
-  vim.api.nvim_win_set_height(win_id, height)
+  local new_height = math.min(n_lines, H.window_get_max_height())
+  vim.api.nvim_win_set_height(win_id, new_height)
+
+  -- Trigger appropriate event if window height has changed
+  if cur_height ~= new_height then
+    H.trigger_event('MiniFilesWindowUpdate', { buf_id = buf_id, win_id = win_id })
+    new_height = vim.api.nvim_win_get_height(win_id)
+  end
 
   -- Ensure that only buffer lines are shown. This can be not the case if after
   -- text edit cursor moved past previous last line.
-  local last_visible_line = vim.fn.line('w0', win_id) + height - 1
+  local last_visible_line = vim.fn.line('w0', win_id) + new_height - 1
   local out_of_buf_lines = last_visible_line - n_lines
   -- - Possibly scroll window upward (`\25` is an escaped `<C-y>`)
   if out_of_buf_lines > 0 then vim.cmd('normal! ' .. out_of_buf_lines .. '\25') end
@@ -2024,9 +2063,13 @@ H.buffer_update_directory = function(buf_id, path, opts)
 end
 
 H.buffer_update_file = function(buf_id, path, opts)
-  -- Determine if file is text. This is not 100% proof, but good enough.
+  -- Work only with readable text file. This is not 100% proof, but good enough.
   -- Source: https://github.com/sharkdp/content_inspector
   local fd = vim.loop.fs_open(path, 'r', 1)
+  if fd == nil then
+    H.set_buflines(buf_id, { '-No-access' .. string.rep('-', opts.windows.width_preview) })
+    return {}
+  end
   local is_text = vim.loop.fs_read(fd, 1024):find('\0') == nil
   vim.loop.fs_close(fd)
   if not is_text then
@@ -2350,7 +2393,7 @@ end
 
 H.fs_normalize_path = function(path) return (path:gsub('/+', '/'):gsub('(.)/$', '%1')) end
 if H.is_windows then
-  H.fs_normalize_path = function(path) return (path:gsub('\\', '/'):gsub('/+', '/'):gsub('(.)/$', '%1')) end
+  H.fs_normalize_path = function(path) return (path:gsub('\\', '/'):gsub('/+', '/'):gsub('(.)[\\/]$', '%1')) end
 end
 
 H.fs_is_present_path = function(path) return vim.loop.fs_stat(path) ~= nil end
@@ -2363,8 +2406,7 @@ H.fs_shorten_path = function(path)
   -- Replace home directory with '~'
   path = H.fs_normalize_path(path)
   local home_dir = H.fs_normalize_path(vim.loop.os_homedir() or '~')
-  local res = path:gsub('^' .. vim.pesc(home_dir), '~')
-  return res
+  return (path:gsub('^' .. vim.pesc(home_dir), '~'))
 end
 
 H.fs_get_basename = function(path) return H.fs_normalize_path(path):match('[^/]+$') end
@@ -2391,13 +2433,13 @@ H.fs_get_type = function(path)
 end
 
 -- File system actions --------------------------------------------------------
-H.fs_actions_confirm = function(fs_actions)
-  local msg = table.concat(H.fs_actions_to_lines(fs_actions), '\n')
+H.fs_actions_confirm = function(fs_actions, opts)
+  local msg = table.concat(H.fs_actions_to_lines(fs_actions, opts), '\n')
   local confirm_res = vim.fn.confirm(msg, '&Yes\n&No', 1, 'Question')
   return confirm_res == 1
 end
 
-H.fs_actions_to_lines = function(fs_actions)
+H.fs_actions_to_lines = function(fs_actions, opts)
   -- Gather actions per source directory
   local actions_per_dir = {}
 
@@ -2423,9 +2465,10 @@ H.fs_actions_to_lines = function(fs_actions)
     table.insert(dir_actions, l)
   end
 
+  local delete_action = opts.options.permanent_delete and 'DELETE' or 'MOVE TO TRASH'
   for _, path in ipairs(fs_actions.delete) do
     local dir_actions = get_dir_actions(path)
-    local l = string.format('  DELETE: %s', get_quoted_basename(path))
+    local l = string.format('  %s: %s', delete_action, get_quoted_basename(path))
     table.insert(dir_actions, l)
   end
 
@@ -2540,7 +2583,7 @@ H.fs_delete = function(path, permanent_delete)
   -- Ensure that same basenames are replaced
   pcall(vim.fn.delete, trash_path, 'rf')
 
-  return vim.loop.fs_rename(path, trash_path)
+  return H.fs_move(path, trash_path)
 end
 
 H.fs_move = function(from, to)
@@ -2549,7 +2592,14 @@ H.fs_move = function(from, to)
 
   -- Move while allowing to create directory
   vim.fn.mkdir(H.fs_get_parent(to), 'p')
-  local success = vim.loop.fs_rename(from, to)
+  local success, _, err_code = vim.loop.fs_rename(from, to)
+
+  if err_code == 'EXDEV' then
+    -- Handle cross-device move separately as `loop.fs_rename` does not work
+    success = H.fs_copy(from, to)
+    if success then success = pcall(vim.fn.delete, from, 'rf') end
+    if not success then pcall(vim.fn.delete, to, 'rf') end
+  end
 
   if not success then return success end
 
@@ -2613,10 +2663,7 @@ H.map = function(mode, lhs, rhs, opts)
   vim.keymap.set(mode, lhs, rhs, opts)
 end
 
-H.trigger_event = function(event_name, data)
-  if H.block_event_trigger[event_name] then return end
-  vim.api.nvim_exec_autocmds('User', { pattern = event_name, data = data })
-end
+H.trigger_event = function(event_name, data) vim.api.nvim_exec_autocmds('User', { pattern = event_name, data = data }) end
 
 H.is_valid_buf = function(buf_id) return type(buf_id) == 'number' and vim.api.nvim_buf_is_valid(buf_id) end
 

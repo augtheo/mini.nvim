@@ -6,7 +6,7 @@ local new_set = MiniTest.new_set
 
 local path_sep = package.config:sub(1, 1)
 local project_root = vim.fn.fnamemodify(vim.fn.getcwd(), ':p')
-local dir_bracketed_path = project_root .. 'tests/dir-bracketed/'
+local dir_bracketed_path = project_root .. 'tests' .. path_sep .. 'dir-bracketed'
 
 -- Helpers with child processes
 --stylua: ignore start
@@ -1219,7 +1219,7 @@ local validate_file = function(id_start, direction, id_ref, opts)
 end
 
 T['file()']['works'] = function()
-  eq(child.fn.getcwd() .. '/', project_root)
+  eq(child.fn.getcwd() .. path_sep, project_root)
 
   -- Should traverse files alphabetically in directory of currently opened file
   validate_works(validate_file, #test_files)
@@ -2304,6 +2304,33 @@ T['treesitter()']['works'] = function()
     -- Last. Move to end of latest non-root parent.
     validate(inside_nodes[i], 'last', nodes[1].to)
   end
+end
+
+T['treesitter()']['sets cursor safely'] = function()
+  child.lua([[
+    if vim.fn.has('nvim-0.9') == 1 then
+      vim.treesitter.get_node = function() return _G.node end
+    else
+      vim.treesitter.get_node_at_pos = function() return _G.node end
+    end
+  ]])
+  set_lines({ 'aaa' })
+
+  -- Before start
+  child.lua([[_G.node = {
+    start = function() return -1, 0 end,
+    end_ = function() return 1, 0 end,
+    range = function() return -1, 0, 1, 0 end,
+    parent = function() return _G.node end,
+  }]])
+
+  set_cursor(1, 1)
+  backward('treesitter')
+  eq(get_cursor(), { 1, 0 })
+
+  set_cursor(1, 1)
+  forward('treesitter')
+  eq(get_cursor(), { 1, 2 })
 end
 
 T['treesitter()']['moves to other edge of current node'] = function()

@@ -32,6 +32,8 @@
 ---
 --- - Customizable project specific testing script.
 ---
+--- - Works on Unix (Linux, MacOS, etc.) and Windows.
+---
 --- What it doesn't support:
 --- - Parallel execution. Due to idea of limiting implementation complexity.
 ---
@@ -1036,7 +1038,7 @@ end
 ---
 --- For more information see |MiniTest-child-neovim|.
 ---
----@return `child` Object of |MiniTest-child-neovim|.
+---@return MiniTest.child Object of |MiniTest-child-neovim|.
 ---
 ---@usage >lua
 ---   -- Initiate
@@ -1088,6 +1090,12 @@ MiniTest.new_child_neovim = function()
 
     -- Make unique name for `--listen` pipe
     local job = { address = vim.fn.tempname() }
+
+    if vim.fn.has('win32') == 1 then
+      -- Use special local pipe prefix on Windows with (hopefully) unique name
+      -- Source: https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-names
+      job.address = [[\\.\pipe\mininvim]] .. vim.fn.fnamemodify(job.address, ':t')
+    end
 
     --stylua: ignore
     local full_args = {
@@ -1391,7 +1399,7 @@ end
 ---   then return value). See for `*_notify` variant to use |vim.rpcnotify()|.
 --- - All fields and methods should be called with `.`, not `:`.
 ---
----@class child
+---@class MiniTest.child
 ---
 ---@field start function Start child process. See |MiniTest-child-neovim.start()|.
 ---@field stop function Stop current child process.

@@ -6,6 +6,7 @@
     - Tree-sitter parser is built-in in Neovim 0.9.x, needs manual enabling via `vim.treesitter.start()`.
     - Has visual regressions on Neovim 0.8.0 and 0.8.1 without enabled tree-sitter (code blocks are highlighted as normal text). Use 0.8.2 or newer.
 - Universally prefer 'mini.icons' module over 'nvim-tree/nvim-web-devicons'.
+- Start automated testing on Windows and MacOS.
 
 ## mini.doc
 
@@ -13,27 +14,46 @@
 
 ## mini.extra
 
-- FEATURE: update `pickers.oldfiles()` to have `current_dir` option which if `true` shows files only from picker's working directory. By @abeldekat, PR #997.
+- FEATURE: update `oldfiles` picker to have `current_dir` option which if `true` shows files only from picker's working directory. By @abeldekat, PR #997.
+- FEATURE: make `git_hunks`, `list`, and `lsp` pickers show icons. Scopes `document_symbol` and `workspace_symbol` in `lsp` picker show icon based on LSP kind (requires set up 'mini.icons'), others - based on path data.
+- FEATURE: update `buf_lines` and `oldfiles` pickers to have `preserve_order` local option, similar to `visit_paths` picker. Other possible candidates for this option are intentionally not updated to not increase maintenance (manually override `match` source method to call `MiniPick.default_match()` with `{ preserve_order = true }` options).
+- FEATURE: update `buf_lines` picker to pad line numbers to achieve more aligned look.
 - BREAKING FEATURE: use "│" as line/position separator instead of ":". This aligns with changes in 'mini.pick' and makes line/position more easily visible.
+
+## mini.git
+
+- FEATURE: update `show_at_cursor()` to include commit's statistics when showing commit.
 
 ## mini.hipatterns
 
 - BREAKING FEATURE: update `compute_hex_color_group()` to compute based on combination of `hex_color` and `style`, opposed to just `hex_color`. This allows simultaneous usage of several styles in user's custom highlighters.
 
+## mini.hues
+
+- FEATURE: implement `apply_palette()` (to compliment `make_palette()`) providing a way to tweak applied palette before applying it.
+
 ## mini.files
 
 - FEATURE: prefer using 'mini.icons' as icon provider.
+- FEATURE: show "MOVE TO TRASH" action during confirmation in case of not persistent delete.
 
 ## mini.icons
 
 - Introduction of a new module.
 
+## mini.misc
+
+- FEATURE: implement `setup_termbg_sync()` to set up terminal background synchronization (removes possible "frame" around current Neovim instance).
+
 ## mini.pick
 
 - FEATURE: prefer using 'mini.icons' as icon provider.
+- BREAKING: update `default_match()` to have table `opts` as fourth argument (instead of boolean `do_sync`). Use `{ sync = true }` to run synchronously. The new design is more aligned with other functions and is more forward compatible.
+- FEATURE: add `preserve_order` option to `default_match()` to allow asynchronous matching which preserves order (i.e. doesn't do sort step of fuzzy matching).
 - BREAKING: encoding line or position in string items has changed:
     - Use "\0" (null character; use "\000" form if it is in a string before digit) instead of ":" as delimiter. This makes it work with files similar to ":" position encoding (like "time_12:34:56"). This only matters for custom sources which provide line or position in string items.
     - Update `default_show()` to display "│" character instead of "\0" in item's string representation (previously was ":"). In particular, this changes how line/position is displayed in `grep` and `grep_live` built-in pickers. This change was done because "│" is more visible as separator.
+- FEATURE: explicitly hide cursor when picker is active (instead of putting it in command line).
 
 ## mini.starter
 
@@ -42,6 +62,7 @@
 ## mini.statusline
 
 - BREAKING FEATURE: update `section_fileinfo()` to show non-empty filetype even in not normal buffers (like plugin's scratch buffers, help, quickfix, etc.). Previously it showed nothing, which was a mistake as filetype can be a valuable information.
+- BREAKING FEATURE: the default `set_vim_settings` config value now does not affect `laststatus = 3` (aka global statusline).
 - FEATURE: prefer using 'mini.icons' as icon provider for `section_fileinfo()`.
 
 ## mini.surround
@@ -51,6 +72,10 @@
 ## mini.tabline
 
 - FEATURE: prefer using 'mini.icons' as icon provider.
+
+## mini.test
+
+- FEATURE: make it work on Windows. By @cameronr, PR #1101.
 
 
 # Version 0.13.0

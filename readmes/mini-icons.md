@@ -40,9 +40,19 @@ If you want to help this project grow but don't know where to start, check out [
 
 - Mocking methods of 'nvim-tree/nvim-web-devicons' for better integrations with plugins outside 'mini.nvim'. See `:h MiniIcons.mock_nvim_web_devicons()`.
 
+- Tweaking built-in maps for "LSP kind" to include icons. In particular, this makes ['mini.completion'](https://github.com/echasnovski/mini.nvim/blob/main/readmes/mini-completion.md) use icons in LSP step. See `:h MiniIcons.tweak_lsp_kind()`.
+
 Notes:
 
 - It is not a goal to become a collection of icons for as much use cases as possible. There are specific criteria for icon data to be included as built-in in each category (see `:h MiniIcons.get()`). The main supported category is "filetype".
+
+Recommendations for plugin authors using 'mini.icons' as a dependency:
+
+- Check if `_G.MiniIcons` table is present (which means that user explicitly enabled 'mini.icons') and provide icons only if it is.
+
+- Use `MiniIcons.get()` function to get icon string and more data about it.
+
+- For file icons prefer using full path instead of relative or only basename. It makes a difference if path matches pattern that uses parent directories. The `:h MiniIcons.config` has an example of that.
 
 ## Dependencies
 
@@ -172,9 +182,13 @@ Here are code snippets for some common installation methods (use only one):
   filetype  = {},
   lsp       = {},
   os        = {},
+
+  -- Control which extensions will be considered during "file" resolution
+  use_file_extension = function(ext, file) return true end,
 }
 ```
 
 ## Similar plugins
 
 - [nvim-tree/nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons)
+- [onsails/lspkind.nvim](https://github.com/onsails/lspkind.nvim)

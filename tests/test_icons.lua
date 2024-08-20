@@ -17,6 +17,7 @@ local forward_lua = function(fun_str)
 end
 
 local get = function(...) return child.lua_get('{ MiniIcons.get(...) }', { ... }) end
+local list = forward_lua('MiniIcons.list')
 
 -- Output test set ============================================================
 local T = new_set({
@@ -67,6 +68,8 @@ T['setup()']['creates `config` field'] = function()
   expect_config('filetype', {})
   expect_config('lsp', {})
   expect_config('os', {})
+  eq(child.lua_get('type(MiniIcons.config.use_file_extension)'), 'function')
+  eq(child.lua_get('MiniIcons.config.use_file_extension()'), true)
 end
 
 T['setup()']['respects `config` argument'] = function()
@@ -91,6 +94,7 @@ T['setup()']['validates `config` argument'] = function()
   expect_config_error({ filetype = 1 }, 'filetype', 'table')
   expect_config_error({ lsp = 1 }, 'lsp', 'table')
   expect_config_error({ os = 1 }, 'os', 'table')
+  expect_config_error({ use_file_extension = 1 }, 'use_file_extension', 'function')
 end
 
 T['setup()']['can customize icons'] = function()
@@ -171,6 +175,11 @@ T['get()']['works with "directory" category'] = function()
   validate('.git', '', 'MiniIconsOrange', false)
   validate('mydir', '󱁂', 'AA', false)
   validate('should-be-default', 'D', 'Comment', true)
+
+  -- Works with full paths
+  validate('/home/user/.git', '', 'MiniIconsOrange', false)
+  validate('/home/user/mydir', '󱁂', 'AA', false)
+  validate('/home/user/should-be-default', 'D', 'Comment', true)
 end
 
 T['get()']['works with "extension" category'] = function()
@@ -179,27 +188,47 @@ T['get()']['works with "extension" category'] = function()
     extension = {
       myext = { glyph = '󱁂', hl = 'AA' },
       ['my.ext'] = { glyph = '󰻲', hl = 'MiniIconsRed' },
+      ['my.other.ext'] = { glyph = 'O', hl = 'Error' },
+      ['my.lua'] = { glyph = 'L', hl = 'String' },
     },
     filetype = { squirrel = { glyph = 'S', hl = 'Special' } },
   })
   local validate = function(name, icon, hl, is_default) eq(get('extension', name), { icon, hl, is_default }) end
 
   validate('lua', '󰢱', 'MiniIconsAzure', false)
+  validate('my.lua', 'L', 'String', false)
+
   validate('myext', '󱁂', 'AA', false)
   validate('my.ext', '󰻲', 'MiniIconsRed', false)
+  validate('my.other.ext', 'O', 'Error', false)
+
   validate('xpm', '󰍹', 'MiniIconsYellow', false)
+  validate('nut', 'S', 'Special', false)
+
   validate('should-be-default', 'E', 'Comment', true)
+
+  -- Properly resolves complex extensions
+  validate('hello.lua', '󰢱', 'MiniIconsAzure', false)
+  validate('hello.my.lua', 'L', 'String', false)
+  validate('hello.world.mp4', '󰈫', 'MiniIconsAzure', false)
+  validate('hello.myext', '󱁂', 'AA', false)
+  validate('hello.my.ext', '󰻲', 'MiniIconsRed', false)
+  validate('hello.my.other.ext', 'O', 'Error', false)
 end
 
 T['get()']['works with "file" category'] = function()
   load_module({
     default = { file = { glyph = 'F', hl = 'Comment' } },
-    file = { myfile = { glyph = '󱁂', hl = 'AA' } },
+    file = {
+      myfile = { glyph = '󱁂', hl = 'AA' },
+      ['init.lua'] = { glyph = 'V' },
+    },
     filetype = { gitignore = { glyph = 'G', hl = 'Ignore' } },
     extension = {
       py = { glyph = 'PY', hl = 'String' },
-      ['my.ext'] = { glyph = '󰻲', hl = 'MiniIconsRed' },
+      ['my.py'] = { glyph = 'MY', hl = 'Comment' },
       ext = { glyph = 'E', hl = 'Comment' },
+      ['my.ext'] = { glyph = '󰻲', hl = 'MiniIconsRed' },
     },
   })
 
@@ -207,27 +236,89 @@ T['get()']['works with "file" category'] = function()
 
   -- Works with different sources of resolution
   -- - Exact basename
-  validate('init.lua', '', 'MiniIconsGreen', false)
+  validate('LICENSE', '', 'MiniIconsCyan', false)
   -- - Extension
   validate('hello.lua', '󰢱', 'MiniIconsAzure', false)
   -- - `vim.filetype.match()`
   validate('Cargo.lock', '', 'MiniIconsOrange', false)
   -- - `vim.filetype.match()` which relies on supplied `buf`
   validate('hello.xpm', '󰍹', 'MiniIconsYellow', false)
+  -- - `vim.filetype.match()` with recognizable extension
+  validate('build.xml', '󰫮', 'MiniIconsRed', false)
   -- - Default
   validate('should-be-default', 'F', 'Comment', true)
 
-  -- Can accept full paths
-  eq(get('file', '/home/user/hello.lua'), get('file', 'hello.lua'))
-
   -- Can use customizations
   validate('myfile', '󱁂', 'AA', false)
+  validate('init.lua', 'V', 'MiniIconsGreen', false)
   validate('hello.py', 'PY', 'String', false)
   validate('.gitignore', 'G', 'Ignore', false)
 
   -- Can use complex "extension"
   validate('hello.ext', 'E', 'Comment', false)
   validate('hello.my.ext', '󰻲', 'MiniIconsRed', false)
+  validate('hello.extra.dot.my.ext', '󰻲', 'MiniIconsRed', false)
+  validate('hello.my.py', 'MY', 'Comment', false)
+  validate('hello.extra.dot.my.py', 'MY', 'Comment', false)
+
+  -- Works with full paths
+  local validate_full = function(name) eq(get('file', name), get('file', name:match('/([^/]+)$'))) end
+  validate_full('/home/user/LICENSE')
+  validate_full('/home/user/init.lua')
+  validate_full('/home/user/world.lua')
+  validate_full('/home/user/myfile')
+  validate_full('/home/user/world.py')
+  validate_full('/home/user/world.ext')
+  validate_full('/home/user/world.my.ext')
+  validate_full('/home/user/should-be-default')
+
+  -- Should use full name in `vim.filetype.match()`
+  validate('/etc/group', '󰫴', 'MiniIconsCyan', false)
+  child.lua([[vim.filetype.add({ pattern = { ['.*/dir/conf'] = 'conf' } })]])
+  validate('/home/user/dir/conf', '󰒓', 'MiniIconsGrey', false)
+
+  -- Cached data for basename should not affect full path resolution
+  eq(get('file', 'gshadow'), { 'F', 'Comment', true })
+  validate('/etc/gshadow', '󰫴', 'MiniIconsCyan', false)
+end
+
+T['get()']['respects `config.use_file_extension`'] = function()
+  child.lua([[
+    _G.log = {}
+    MiniIcons.setup({
+      extension = {
+        ['my.ext'] = { glyph = 'M', hl = 'Comment' },
+      },
+      use_file_extension = function(ext, file, ...)
+        table.insert(_G.log, { ext, file, ... })
+        if ext == 'yml' then return nil end
+        if vim.endswith(ext, 'scm') then return false end
+        return true
+      end
+    })
+  ]])
+
+  -- Should be called only once with proper arguments
+  child.lua('_G.log = {}')
+  eq(get('file', 'hello.woRld.My.Ext'), { 'M', 'Comment', false })
+  eq(child.lua_get('_G.log'), { { 'world.my.ext', 'hello.woRld.My.Ext' } })
+
+  -- Should allow skipping extensions if returns not `true`
+  child.lua([[vim.filetype.add({ pattern = { ['.*/roles/.*/tasks/.*%.ya?ml'] = 'yaml.ansible' } })]])
+  eq(get('file', '/home/user/roles/a/tasks/hello.yml'), { '󱂚', 'MiniIconsGrey', false })
+  eq(get('file', '/home/user/roles/a/tasks/hello.yaml'), { '', 'MiniIconsPurple', false })
+  eq(get('file', '/hello.yml'), { '', 'MiniIconsPurple', false })
+  eq(get('file', '/extra.dots.yml'), { '', 'MiniIconsPurple', false })
+
+  -- - '/queries/.*%.scm' pattern should be built-in
+  eq(get('file', './queries/lua.scm'), { '󰐅', 'MiniIconsGreen', false })
+  eq(get('file', './queries/extra.dots.scm'), { '󰐅', 'MiniIconsGreen', false })
+  eq(get('file', 'lua.scm'), { '󰘧', 'MiniIconsGrey', false })
+
+  -- Should not be called if there is no extension
+  child.lua('_G.log = {}')
+  get('file', 'file-without-extension')
+  eq(child.lua_get('_G.log'), {})
 end
 
 T['get()']['works with "filetype" category'] = function()
@@ -292,9 +383,8 @@ T['get()']['caches output'] = function()
   eq(durations.cache <= 0.02 * durations.no_cache_2, true)
 end
 
-T['get()']['adds to cache resolved output source'] = function()
+T['get()']['adds to cache resolved output in its original category'] = function()
   -- NOTES:
-  -- - Only manually tracked extensions can be target of resolve.
   -- - There should also be caching of both "file" and "extension" category
   --   resolving to "filetype", but as "filetype" is already very fast without
   --   caching, the benchmarking is not stable.
@@ -305,20 +395,73 @@ T['get()']['adds to cache resolved output source'] = function()
       return vim.loop.hrtime() - start_time
     end
 
-    local ext_no_cache = bench('extension', 'lua')
-
-    -- "file" category resolving to "extension"
+    -- "file" category resolving to manually tracked "extension"
+    local ext_manual_no_cache = bench('extension', 'lua')
     MiniIcons.get('file', 'hello.py')
-    local ext_cache_after_file = bench('extension', 'py')
+    local ext_manual_cache = bench('extension', 'py')
+
+    -- "file" category resolving to known (i.e. not fallback) "extension"
+    local ext_known_no_cache = bench('extension', 'txt')
+    MiniIcons.get('file', 'hello.yml')
+    local ext_known_cache = bench('extension', 'yml')
+
+    -- "file" category resolving to unknown "extension"
+    local ext_unknown_no_cache = bench('extension', 'myext')
+    MiniIcons.get('file', 'hello.myotherext')
+    local ext_unknown_cache = bench('extension', 'myotherext')
 
     return {
-      ext_no_cache = ext_no_cache,
-      ext_cache_after_file = ext_cache_after_file,
+      ext_manual_no_cache = ext_manual_no_cache,
+      ext_manual_cache = ext_manual_cache,
+      ext_known_no_cache = ext_known_no_cache,
+      ext_known_cache = ext_known_cache,
+      ext_unknown_no_cache = ext_unknown_no_cache,
+      ext_unknown_cache = ext_unknown_cache,
     }
   ]])
 
-  -- Resolution with manually tracked data is usually fast, hence high coeff
-  eq(durations.ext_cache_after_file < 0.7 * durations.ext_no_cache, true)
+  -- Resolution with manually tracked data is usually fast, hence higher coeff
+  eq(durations.ext_manual_cache < 0.7 * durations.ext_manual_no_cache, true)
+
+  -- There is a full effect of caching for not manually tracked
+  eq(durations.ext_known_cache < 0.1 * durations.ext_known_no_cache, true)
+  eq(durations.ext_unknown_cache < 0.1 * durations.ext_unknown_no_cache, true)
+end
+
+T['get()']['uses cached extension during "file" resolution'] = function()
+  local durations = child.lua([[
+    local bench = function(category, name)
+      local start_time = vim.loop.hrtime()
+      MiniIcons.get(category, name)
+      return vim.loop.hrtime() - start_time
+    end
+
+    -- Known extension (i.e. not falling back to default)
+    local file_known_ext_no_cache = bench('file', 'hello.txt')
+    MiniIcons.get('extension', 'yml')
+    local file_known_ext_cache = bench('file', 'world.yml')
+
+    -- Unknown extension (i.e. falling back to default)
+    local file_unknown_ext_no_cache = bench('file', 'hello.myext')
+    MiniIcons.get('file', 'hello.myotherext')
+    local file_unknown_ext_cache = bench('file', 'world.myotherext')
+
+    return {
+      file_known_ext_no_cache = file_known_ext_no_cache,
+      file_known_ext_cache = file_known_ext_cache,
+      file_unknown_ext_no_cache = file_unknown_ext_no_cache,
+      file_unknown_ext_cache = file_unknown_ext_cache,
+    }
+  ]])
+
+  -- Known extensions are used as output resulting in no `vim.filetype.match()`
+  -- call for file name itself
+  eq(durations.file_known_ext_cache < 0.1 * durations.file_known_ext_no_cache, true)
+
+  -- Unknown extensions are NOT used as output, but they are still cached which
+  -- results in no extra `vim.filetype.match()` call to resolve itself inside
+  -- "extension" category
+  eq(durations.file_unknown_ext_cache < 0.7 * durations.file_unknown_ext_no_cache, true)
 end
 
 T['get()']['prefers user configured data over `vim.filetype.match()`'] = function()
@@ -378,6 +521,12 @@ T['get()']['respects `config.style`'] = function()
   -- - 'not-supported' is resolved to use "file" default
   eq(get('file', 'not-supported'), { 'F', 'MiniIconsGrey', true })
 
+  -- Should work with full paths
+  eq(get('file', '/home/user/LICENSE'), { 'L', 'MiniIconsCyan', false })
+  eq(get('file', '/home/user/world.lua'), { 'L', 'MiniIconsAzure', false })
+  eq(get('file', '/home/user/Cargo.lock'), { 'T', 'MiniIconsOrange', false })
+  eq(get('file', '/home/user/not-supported-2'), { 'F', 'MiniIconsGrey', true })
+
   -- Should work with all categories
   eq(get('default', 'lsp')[1], 'L')
   eq(get('directory', 'nvim')[1], 'N')
@@ -403,12 +552,12 @@ end
 T['get()']['respects multibyte characters with "ascii" style'] = function()
   load_module({
     style = 'ascii',
-    directory = { й_dir = { glyph = 'M' } },
-    extension = { й_ext = { glyph = 'M' } },
-    file = { й_file = { glyph = 'M' } },
-    filetype = { й_filetype = { glyph = 'M' } },
-    lsp = { й_lsp = { glyph = 'M' } },
-    os = { й_os = { glyph = 'M' } },
+    directory = { ['й_dir'] = { glyph = 'M' } },
+    extension = { ['й_ext'] = { glyph = 'M' } },
+    file = { ['й_file'] = { glyph = 'M' } },
+    filetype = { ['й_filetype'] = { glyph = 'M' } },
+    lsp = { ['й_lsp'] = { glyph = 'M' } },
+    os = { ['й_os'] = { glyph = 'M' } },
   })
 
   -- Currently matched without making  it upper case to save speed for
@@ -500,6 +649,17 @@ T['get()']['can be used after deleting all buffers'] = function()
   eq(get('file', 'hello.tcsh'), { '', 'MiniIconsAzure', false })
 end
 
+T['get()']['uses width one glyphs'] = function()
+  local bad_glyphs = {}
+  for _, cat in ipairs(list('default')) do
+    for _, name in ipairs(list(cat)) do
+      local icon = get(cat, name)[1]
+      if vim.fn.strdisplaywidth(icon) > 1 then table.insert(bad_glyphs, { cat, name, icon }) end
+    end
+  end
+  eq(bad_glyphs, {})
+end
+
 T['get()']['validates arguments'] = function()
   expect.error(function() get(1, 'lua') end, 'category.*string')
   expect.error(function() get('file', 1) end, 'name.*string')
@@ -508,8 +668,6 @@ T['get()']['validates arguments'] = function()
 end
 
 T['list()'] = new_set()
-
-local list = forward_lua('MiniIcons.list')
 
 T['list()']['works'] = function()
   local islist = vim.fn.has('nvim-0.10') == 1 and vim.islist or vim.tbl_islist
@@ -521,7 +679,7 @@ T['list()']['works'] = function()
 
   eq(list('default'), { 'default', 'directory', 'extension', 'file', 'filetype', 'lsp', 'os' })
   validate('directory', 'nvim')
-  validate('extension', 'lua')
+  validate('extension', 'h')
   validate('file', 'init.lua')
   validate('filetype', 'lua')
   validate('lsp', 'array')
@@ -586,7 +744,6 @@ T['mock_nvim_web_devicons()']['works'] = function()
   child.lua('_G.devicons = require("nvim-web-devicons")')
 
   -- Should reasonable mock at least common functions which return something
-  local get_icon = function(...) return child.lua_get('{ devicons.get_icon(...) }', { ... }) end
   eq(child.lua_get('{ devicons.get_icon("init.lua", nil) }'), { '', 'MiniIconsGreen' })
   eq(child.lua_get('{ devicons.get_icon(nil, "lua") }'), { '󰢱', 'MiniIconsAzure' })
   eq(child.lua_get('{ devicons.get_icon("hello.py", "lua", {}) }'), { '󰌠', 'MiniIconsYellow' })
@@ -663,6 +820,83 @@ T['mock_nvim_web_devicons()']['works'] = function()
   for _, method in ipairs(present) do
     eq(child.lua_get('type(devicons.' .. method .. ')'), 'function')
   end
+end
+
+T['tweak_lsp_kind()'] = new_set({
+  hooks = {
+    pre_case = function()
+      child.lua([[MiniIcons.setup({
+        default = { lsp = { glyph = 'L' } },
+        lsp = {
+          text = { glyph = 'T' },
+          file = { glyph = 'F' },
+          somethingnew = { glyph = 'S' },
+        }
+      })]])
+    end,
+  },
+})
+
+local setup_lsp_protocol = function()
+  child.lua([[
+    vim.lsp.protocol = {
+      CompletionItemKind = {
+        [1] = 'Text',         Text = 1,
+        [2] = 'Method',       Method = 2,
+        [3] = 'SomethingNew', SomethingNew = 3,
+        [4] = 'Fallback',     Fallback = 4,
+      },
+      SymbolKind = {
+        [1] = 'File',         File = 1,
+        [2] = 'Module',       Module = 2,
+        [3] = 'SomethingNew', SomethingNew = 3,
+        [4] = 'Fallback',     Fallback = 4,
+      },
+    }
+  ]])
+  return {
+    CompletionItemKind = { Text = 1, Method = 2, SomethingNew = 3, Fallback = 4 },
+    SymbolKind = { File = 1, Module = 2, SomethingNew = 3, Fallback = 4 },
+  }
+end
+
+local validate_lsp_protocol = function(mode, field, ref_arr)
+  local init_map = setup_lsp_protocol()
+  child.lua('MiniIcons.tweak_lsp_kind(...)', { mode })
+
+  child.lua('_G.tbl = vim.lsp.protocol.' .. field)
+  child.lua([=[
+    _G.arr, _G.map = {}, {}
+    for k, v in pairs(_G.tbl) do
+      if type(k) == 'number' then _G.arr[k] = v else _G.map[k] = v end
+    end
+    ]=])
+
+  -- Should modify only "array" part (i.e. only "number -> kind" map) in order
+  -- to preserve original info
+  eq(child.lua_get('_G.arr'), ref_arr)
+  eq(child.lua_get('_G.map'), init_map[field])
+end
+
+T['tweak_lsp_kind()']['works'] = function()
+  -- By default should prepend icon
+  validate_lsp_protocol(nil, 'CompletionItemKind', { 'T Text', ' Method', 'S SomethingNew', 'L Fallback' })
+  validate_lsp_protocol(nil, 'SymbolKind', { 'F File', ' Module', 'S SomethingNew', 'L Fallback' })
+end
+
+T['tweak_lsp_kind()']['respects `mode` argument'] = function()
+  validate_lsp_protocol('append', 'CompletionItemKind', { 'Text T', 'Method ', 'SomethingNew S', 'Fallback L' })
+  validate_lsp_protocol('append', 'SymbolKind', { 'File F', 'Module ', 'SomethingNew S', 'Fallback L' })
+
+  validate_lsp_protocol('prepend', 'CompletionItemKind', { 'T Text', ' Method', 'S SomethingNew', 'L Fallback' })
+  validate_lsp_protocol('prepend', 'SymbolKind', { 'F File', ' Module', 'S SomethingNew', 'L Fallback' })
+
+  validate_lsp_protocol('replace', 'CompletionItemKind', { 'T', '', 'S', 'L' })
+  validate_lsp_protocol('replace', 'SymbolKind', { 'F', '', 'S', 'L' })
+end
+
+T['tweak_lsp_kind()']['validates arguments'] = function()
+  expect.error(function() child.lua('MiniIcons.tweak_lsp_kind("aa")') end, '`mode`.*one of')
 end
 
 return T

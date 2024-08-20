@@ -13,8 +13,7 @@ local get_cursor = function(...) return child.get_cursor(...) end
 local set_lines = function(...) return child.set_lines(...) end
 local get_lines = function(...) return child.get_lines(...) end
 local type_keys = function(...) return child.type_keys(...) end
-local poke_eventloop = function() child.api.nvim_eval('1') end
-local sleep = function(ms) vim.loop.sleep(ms); poke_eventloop() end
+local sleep = function(ms) helpers.sleep(ms, child) end
 --stylua: ignore end
 
 -- Tweak `expect_screenshot()` to test only on Neovim>=0.9 (as it introduced
@@ -29,21 +28,10 @@ end
 local test_dir = 'tests/dir-files'
 
 local join_path = function(...) return table.concat({ ... }, '/') end
+local full_path = function(...) return (vim.fn.fnamemodify(join_path(...), ':p'):gsub('\\', '/'):gsub('(.)/$', '%1')) end
+local short_path = function(...) return (vim.fn.fnamemodify(join_path(...), ':~'):gsub('\\', '/'):gsub('(.)/$', '%1')) end
 
-local full_path = function(...)
-  local res = vim.fn.fnamemodify(join_path(...), ':p'):gsub('(.)/$', '%1')
-  return res
-end
-
-local short_path = function(...)
-  local res = vim.fn.fnamemodify(join_path(...), ':~'):gsub('(.)/$', '%1')
-  return res
-end
-
-local make_test_path = function(...)
-  local path = join_path(test_dir, join_path(...))
-  return child.fn.fnamemodify(path, ':p')
-end
+local make_test_path = function(...) return full_path(join_path(test_dir, ...)) end
 
 local make_temp_dir = function(name, children)
   -- Make temporary directory and make sure it is removed after test is done
@@ -98,7 +86,7 @@ end
 local make_plain_pattern = function(...) return table.concat(vim.tbl_map(vim.pesc, { ... }), '.*') end
 
 local is_file_in_buffer = function(buf_id, path)
-  return string.find(child.api.nvim_buf_get_name(buf_id), vim.pesc(path) .. '$') ~= nil
+  return string.find(child.api.nvim_buf_get_name(buf_id):gsub('\\', '/'), vim.pesc(path:gsub('\\', '/')) .. '$') ~= nil
 end
 
 local is_file_in_window = function(win_id, path) return is_file_in_buffer(child.api.nvim_win_get_buf(win_id), path) end
@@ -143,10 +131,10 @@ local mock_stdpath_data = function()
     [[
     _G.stdpath_orig = vim.fn.stpath
     vim.fn.stdpath = function(what)
-      if what == 'data' then return '%s' end
+      if what == 'data' then return %s end
       return _G.stdpath_orig(what)
     end]],
-    data_dir
+    vim.inspect(data_dir)
   )
   child.lua(lua_cmd)
   return data_dir
@@ -166,6 +154,10 @@ local test_fs_entries = {
   { fs_type = 'file', name = 'A-file-2', path = full_path('A-file-2') },
   { fs_type = 'file', name = 'b-file', path = full_path('b-file') },
 }
+
+-- Time constants
+local track_lost_focus_delay = 1000
+local small_time = helpers.get_time_const(10)
 
 -- Output test set ============================================================
 local T = new_set({
@@ -371,6 +363,7 @@ T['open()']['uses icon provider'] = function()
     'MiniIconsAzure',  'MiniFilesFile',
     'MiniIconsCyan',   'MiniFilesFile',
     'MiniIconsGrey',   'MiniFilesFile',
+    'MiniIconsGrey',   'MiniFilesFile',
   })
 
   go_out()
@@ -399,6 +392,14 @@ T['open()']['uses icon provider'] = function()
   child.lua('_G.MiniIcons = nil')
 
   open(make_test_path('real'))
+  child.expect_screenshot()
+end
+
+T['open()']['uses `MiniIcons.get()` with full path'] = function()
+  child.set_size(15, 60)
+  child.lua([[vim.filetype.add({ pattern = { ['.*/common/.*%-file'] = 'make' } })]])
+  child.lua('require("mini.icons").setup()')
+  open(test_dir_path)
   child.expect_screenshot()
 end
 
@@ -848,7 +849,7 @@ T['open()']['tracks lost focus'] = function()
     open(test_dir_path)
     loose_focus()
     -- Tracking is done by checking every second
-    sleep(1000 + 20)
+    sleep(track_lost_focus_delay + small_time)
     validate_n_wins(1)
     eq(#child.api.nvim_list_bufs(), 1)
   end
@@ -1203,7 +1204,7 @@ T['go_in()']['works on file'] = function()
   eq(get_lines(), { '.a-file' })
 
   -- Should open with relative path to have better view in `:buffers`
-  expect.match(child.cmd_capture('buffers'), '"' .. vim.pesc(test_dir_path))
+  expect.match(child.cmd_capture('buffers'):gsub('\\', '/'), '"' .. vim.pesc(test_dir_path))
 end
 
 T['go_in()']['respects `opts.close_on_file`'] = function()
@@ -1290,6 +1291,41 @@ T['go_in()']['works on directory'] = function()
 end
 
 T['go_in()']['works when no explorer is opened'] = function() expect.no_error(go_in) end
+
+T['go_in()']['warns about paths not present on disk'] = function()
+  local validate_log = function(msg_pattern)
+    local notify_log = child.lua_get('_G.notify_log')
+    eq(#notify_log, 1)
+    expect.match(notify_log[1][1], msg_pattern)
+    eq(notify_log[1][2], child.lua_get('vim.log.levels.WARN'))
+    child.lua('_G.notify_log = {}')
+  end
+
+  open(test_dir_path)
+
+  -- Modified line without synchronization
+  type_keys('O', 'new-file', '<Esc>')
+  go_in()
+  validate_log('Line "new%-file".*Did you modify without synchronization%?')
+
+  -- Entry which doesn't exist on disk
+  child.lua([[
+    local get_fs_entry_orig = MiniFiles.get_fs_entry
+    MiniFiles.get_fs_entry = function(...)
+      local res = get_fs_entry_orig(...)
+      res.fs_type = nil
+      return res
+    end
+  ]])
+  type_keys('j')
+  go_in()
+  validate_log('Path .* is not present on disk%.$')
+
+  -- Entry with possibly miscreated symlink
+  child.lua('vim.fn.resolve = function() return "miscreated-symlink" end')
+  go_in()
+  validate_log('Path.*is not present on disk.*miscreated symlink %(resolved to miscreated%-symlink%)')
+end
 
 T['go_out()'] = new_set()
 
@@ -1973,6 +2009,12 @@ T['Preview']['works for files'] = function()
   -- Should fall back to built-in syntax highlighting in case of no tree-sitter
   type_keys('j')
   expect_screenshot()
+
+  -- Should not error on files which failed to read (looks like on Windows it
+  -- can be different from "non-readable" files)
+  child.lua('vim.loop.fs_open = function() return nil end')
+  type_keys('j')
+  expect_screenshot()
 end
 
 T['Preview']['does not highlight big files'] = function()
@@ -2084,7 +2126,7 @@ T['Preview']['does not result in flicker'] = function()
   ]])
 
   -- State shown initially should be the same as after some time has passed
-  sleep(10)
+  sleep(small_time)
   eq(child.lua_get('_G.visible_bufs'), child.lua_get('_G.get_visible_bufs()'))
 end
 
@@ -2724,6 +2766,9 @@ T['File manipulation']['delete respects `options.permanent_delete`'] = function(
 
   validate_move_delete()
 
+  validate_confirm_args([[  MOVE TO TRASH: 'file']])
+  validate_confirm_args([[  MOVE TO TRASH: 'dir']])
+
   -- Deleting entries again with same name should replace previous ones
   -- - Recreate previously deleted entries with different content
   child.fn.writefile({ 'New file' }, join_path(temp_dir, 'file'))
@@ -2743,6 +2788,37 @@ T['File manipulation']['delete respects `options.permanent_delete`'] = function(
   -- - Check that files actually were replaced
   validate_file_content(join_path(trash_dir, 'file'), { 'New file' })
   validate_file_content(join_path(trash_dir, 'dir', 'subfile'), { 'New subfile' })
+end
+
+T['File manipulation']['can move to trash across devices'] = function()
+  child.set_size(10, 60)
+
+  local data_dir = mock_stdpath_data()
+  local trash_dir = join_path(data_dir, 'mini.files', 'trash')
+  child.lua('MiniFiles.config.options.permanent_delete = false')
+
+  -- Mock `vim.loop.fs_rename()` not working across devices/volumes/partitions
+  child.lua('vim.loop.fs_rename = function() return nil, "EXDEV: cross-device link not permitted:", "EXDEV" end')
+
+  local temp_dir = make_temp_dir('temp', { 'file', 'dir/', 'dir/nested/', 'dir/nested/file' })
+  open(temp_dir)
+
+  -- Write lines in moved files to check "copy-delete" and not "create-delete"
+  child.fn.writefile({ 'File' }, join_path(temp_dir, 'file'))
+  child.fn.writefile({ 'File nested' }, join_path(temp_dir, 'dir', 'nested', 'file'))
+
+  type_keys('dG')
+  mock_confirm(1)
+  synchronize()
+
+  validate_no_file(temp_dir, 'file')
+  validate_no_directory(temp_dir, 'dir')
+  validate_file(trash_dir, 'file')
+  validate_file_content(join_path(trash_dir, 'file'), { 'File' })
+  validate_directory(trash_dir, 'dir')
+  validate_directory(trash_dir, 'dir', 'nested')
+  validate_file(trash_dir, 'dir', 'nested', 'file')
+  validate_file_content(join_path(trash_dir, 'dir', 'nested', 'file'), { 'File nested' })
 end
 
 T['File manipulation']['can rename'] = function()
@@ -3040,6 +3116,39 @@ T['File manipulation']['can move inside new directory'] = function()
   validate_file_content(join_path(temp_dir, 'new-dir', 'new-subdir', 'file'), { 'File' })
 end
 
+T['File manipulation']['can move across devices'] = function()
+  child.set_size(10, 60)
+
+  -- Mock `vim.loop.fs_rename()` not working across devices/volumes/partitions
+  child.lua('vim.loop.fs_rename = function() return nil, "EXDEV: cross-device link not permitted:", "EXDEV" end')
+
+  local tmp_children = { 'dir/', 'dir/file', 'dir/nested/', 'dir/nested/sub/', 'dir/nested/sub/file' }
+  local temp_dir = make_temp_dir('temp', tmp_children)
+  open(temp_dir)
+
+  -- Write lines in moved files to check "copy-delete" and not "create-delete"
+  child.fn.writefile({ 'File' }, join_path(temp_dir, 'dir', 'file'))
+  child.fn.writefile({ 'File nested' }, join_path(temp_dir, 'dir', 'nested', 'sub', 'file'))
+
+  go_in()
+  type_keys('dG')
+  go_out()
+  type_keys('P')
+
+  mock_confirm(1)
+  synchronize()
+
+  validate_no_file(temp_dir, 'dir', 'file')
+  validate_file(temp_dir, 'file')
+  validate_file_content(join_path(temp_dir, 'file'), { 'File' })
+
+  validate_no_directory(temp_dir, 'dir', 'nested')
+  validate_directory(temp_dir, 'nested')
+  validate_directory(temp_dir, 'nested', 'sub')
+  validate_file(temp_dir, 'nested', 'sub', 'file')
+  validate_file_content(join_path(temp_dir, 'nested', 'sub', 'file'), { 'File nested' })
+end
+
 T['File manipulation']['move works again after undo'] = function()
   local temp_dir = make_temp_dir('temp', { 'file', 'dir/' })
   open(temp_dir)
@@ -3069,6 +3178,8 @@ T['File manipulation']['move works again after undo'] = function()
   type_keys('u', 'u')
   go_out()
   type_keys('u', 'u')
+  -- - Clear command line
+  type_keys(':', '<Esc>')
   -- - Highlighting is different on Neovim>=0.10
   if child.fn.has('nvim-0.10') == 1 then child.expect_screenshot() end
 
@@ -3405,7 +3516,7 @@ T['File manipulation']['works with problematic names'] = function()
 end
 
 T['File manipulation']['handles backslash on Unix'] = function()
-  if child.lua_get('vim.loop.os_uname().sysname') == 'Windows_NT' then MiniTest.skip('Test is not for Windows.') end
+  if child.loop.os_uname().sysname == 'Windows_NT' then MiniTest.skip('Test is not for Windows.') end
 
   local temp_dir = make_temp_dir('temp', { '\\', 'hello\\', 'wo\\rld' })
   open(temp_dir)
@@ -3756,28 +3867,48 @@ T['Events']['`MiniFilesWindowUpdate` triggers'] = function()
 
   open(test_dir_path)
   local buf_id_1, win_id_1 = child.api.nvim_get_current_buf(), child.api.nvim_get_current_win()
-  -- Should provide both `buf_id` and `win_id`
-  validate_event_track({ { buf_id = buf_id_1, win_id = win_id_1 } })
+  -- Triggered several times because `CursorMoved` also triggeres it.
+  -- Should provide both `buf_id` and `win_id`.
+  validate_event_track({ { buf_id = buf_id_1, win_id = win_id_1 }, { buf_id = buf_id_1, win_id = win_id_1 } })
   clear_event_track()
 
   go_in()
   local buf_id_2, win_id_2 = child.api.nvim_get_current_buf(), child.api.nvim_get_current_win()
 
-  -- - Force order, as there is no order guarantee of event trigger
   -- - Both windows should be updated
-  validate_event_track({ { buf_id = buf_id_1, win_id = win_id_1 }, { buf_id = buf_id_2, win_id = win_id_2 } }, true)
+  validate_event_track(
+    {
+      { buf_id = buf_id_1, win_id = win_id_1 },
+      { buf_id = buf_id_1, win_id = win_id_1 },
+      { buf_id = buf_id_2, win_id = win_id_2 },
+      { buf_id = buf_id_2, win_id = win_id_2 },
+    },
+    -- - Force order, as there is no order guarantee of event trigger
+    true
+  )
 end
 
-T['Events']['`MiniFilesWindowUpdate` is not triggered for cursor move'] = function()
+T['Events']['`MiniFilesWindowUpdate` is triggered after every possible window config update'] = function()
   track_event('MiniFilesWindowUpdate')
 
   open(test_dir_path)
   clear_event_track()
 
-  type_keys('j')
-  type_keys('<Right>')
-  type_keys('i', '<Left>')
-  validate_event_track({})
+  -- Windows have to adjust configs on every cursor move if preview is set
+  child.lua('MiniFiles.config.windows.preview = true')
+
+  local validate = function(keys)
+    clear_event_track()
+    type_keys(keys)
+    eq(#get_event_track() > 0, true)
+  end
+
+  validate('j')
+  validate('<Right>')
+  validate({ 'i', '<Left>' })
+
+  -- NOTE: Currently this event also is triggered on every cursor move even if
+  -- preview is not enabled. This is to simplify code.
 end
 
 T['Events']['`MiniFilesWindowUpdate` is triggered after current buffer is set'] = function()
@@ -3785,7 +3916,55 @@ T['Events']['`MiniFilesWindowUpdate` is triggered after current buffer is set'] 
   open(test_dir_path)
   clear_event_track()
   go_out()
-  validate_event_track({ { buf_id = 2, win_id = 1004 }, { buf_id = 3, win_id = 1003 } }, true)
+  validate_event_track({
+    { buf_id = 2, win_id = 1004 },
+    { buf_id = 2, win_id = 1004 },
+    { buf_id = 3, win_id = 1003 },
+    { buf_id = 3, win_id = 1003 },
+  }, true)
+end
+
+T['Events']['`MiniFilesWindowUpdate` can customize internally set window config parts'] = function()
+  if child.fn.has('nvim-0.10') == 0 then MiniTest.skip('Screenshots are generated for Neovim>=0.9') end
+  child.set_size(15, 80)
+
+  load_module({
+    windows = {
+      preview = true,
+      width_focus = 40,
+      width_nofocus = 10,
+      width_preview = 20,
+    },
+  })
+
+  child.lua([[
+    vim.api.nvim_create_autocmd('User', {
+      pattern = 'MiniFilesWindowUpdate',
+      callback = function(args)
+        local config = vim.api.nvim_win_get_config(args.data.win_id)
+        -- Ensure fixed height
+        config.height = 5
+        -- Ensure title padding
+        local n = #config.title
+        if config.title[n][1] ~= ' ' then table.insert(config.title, { ' ', 'NormalFloat' }) end
+        if config.title[1][1] ~= ' ' then table.insert(config.title, 1, { ' ', 'NormalFloat' }) end
+        vim.api.nvim_win_set_config(args.data.win_id, config)
+      end
+    })
+  ]])
+
+  open(test_dir_path)
+  go_in()
+  child.expect_screenshot()
+
+  go_out()
+  type_keys('4j', 'o', 'a')
+  child.expect_screenshot()
+
+  -- Works even if completion menu (like from 'mini.completion') is triggered
+  child.cmd('set iskeyword+=-')
+  type_keys('<C-n>')
+  child.expect_screenshot()
 end
 
 T['Events']['`MiniFilesActionCreate` triggers'] = function()
@@ -3857,6 +4036,7 @@ end
 T['Events']['`MiniFilesActionDelete` triggers for `options.permanent_delete = false`'] = function()
   track_event('MiniFilesActionDelete')
 
+  mock_stdpath_data()
   child.lua('MiniFiles.config.options.permanent_delete = false')
   local temp_dir = make_temp_dir('temp', { 'file', 'dir/', 'dir/subfile' })
   open(temp_dir)
